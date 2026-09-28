@@ -1,80 +1,103 @@
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
-    <head>
-        @include('partials.head')
-    </head>
-    <body class="min-h-screen bg-white dark:bg-zinc-800 antialiased">
-    <flux:header class="bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700">
-        <flux:sidebar.toggle class="lg:hidden" icon="bars-2" inset="left" />
+<head>
+    @include('partials.head')
+</head>
+<body class="min-h-screen bg-white dark:bg-zinc-800 antialiased">
+@php
+    $user = auth()->user();
+    $initials = collect(explode(' ', trim($user?->name ?? '')))
+        ->filter()
+        ->take(2)
+        ->map(fn ($word) => \Illuminate\Support\Str::upper(\Illuminate\Support\Str::substr($word, 0, 1)))
+        ->implode('');
+@endphp
 
-        <flux:brand href="#" logo="https://fluxui.dev/img/demo/logo.png" name="Acme Inc." class="max-lg:hidden dark:hidden" />
-        <flux:brand href="#" logo="https://fluxui.dev/img/demo/dark-mode-logo.png" name="Acme Inc." class="max-lg:hidden! hidden dark:flex" />
+<flux:header class="bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700">
+    <flux:sidebar.toggle class="lg:hidden" icon="bars-2" inset="left" />
 
-        <flux:navbar class="max-lg:hidden">
-            <flux:navbar.item>Retour & Retractations</flux:navbar.item>
-            <flux:navbar.item>Changement d'adresse</flux:navbar.item>
-            <flux:navbar.item>Invertion de colis</flux:navbar.item>
-            <flux:dropdown>
-                <flux:navbar.item icon:trailing="chevron-down">Autres</flux:navbar.item>
+    <flux:brand href="#" logo="https://fluxui.dev/img/demo/logo.png" name="Acme Inc." class="max-lg:hidden dark:hidden" />
+    <flux:brand href="#" logo="https://fluxui.dev/img/demo/dark-mode-logo.png" name="Acme Inc." class="max-lg:hidden! hidden dark:flex" />
 
-                <flux:navmenu>
-                    <flux:navbar.item href="#">Ticket redodant</flux:navbar.item>
-                </flux:navmenu>
-            </flux:dropdown>
+    <flux:navbar class="max-lg:hidden">
+        <flux:navbar.item>Retour & Retractations</flux:navbar.item>
+        <flux:navbar.item>Changement d'adresse</flux:navbar.item>
+        <flux:navbar.item>Invertion de colis</flux:navbar.item>
+        <flux:navbar.item href="#">Ticket redodant</flux:navbar.item>
+    </flux:navbar>
 
-            <flux:dropdown>
-                <flux:navbar.item icon:trailing="chevron-down">Administrator</flux:navbar.item>
+    <flux:spacer />
 
-                <flux:navmenu>
-                    <flux:navbar.item href="#">Utilisateurs</flux:navbar.item>
-                </flux:navmenu>
-            </flux:dropdown>
-        </flux:navbar>
-
-        <flux:spacer />
-
-        <flux:navbar class="mr-4">
-            <flux:navbar.item square icon="magnifying-glass" href="#" label="Search" />
-            <flux:navbar.item class="max-lg:hidden" square icon="cog-6-tooth" href="#" label="Settings" />
-            <flux:navbar.item class="max-lg:hidden" square icon="information-circle" href="#" label="Help" />
-        </flux:navbar>
-
-        <flux:profile avatar="https://fluxui.dev/img/demo/user.png" />
-    </flux:header>
-    <flux:sidebar sticky collapsible="mobile" class="lg:hidden bg-zinc-50 dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-700">
-        <flux:sidebar.header>
-            <flux:sidebar.brand
-                href="#"
-                logo="https://fluxui.dev/img/demo/logo.png"
-                logo:dark="https://fluxui.dev/img/demo/dark-mode-logo.png"
-                name="Acme Inc."
+    @auth
+        <flux:dropdown position="bottom" align="end">
+            <flux:profile
+                :initials="$initials"
+                :name="$user->name"
+                icon-trailing="chevron-down"
+                class="max-lg:[&_[data-flux-profile-name]]:hidden"
             />
 
-            <flux:sidebar.collapse class="in-data-flux-sidebar-on-desktop:not-in-data-flux-sidebar-collapsed-desktop:-mr-2" />
-        </flux:sidebar.header>
+            <flux:menu class="min-w-56">
+                <div class="flex items-center gap-3 px-2 py-2">
+                    <flux:avatar :name="$user->name" :initials="$initials" size="sm" />
+                    <div class="grid text-start leading-tight">
+                        <span class="truncate text-sm font-semibold">{{ $user->name }}</span>
+                        <span class="truncate text-xs text-zinc-500 dark:text-zinc-400">{{ $user->email }}</span>
+                    </div>
+                </div>
 
-        <flux:sidebar.nav>
-            <flux:sidebar.item icon="home" href="#" current>Home</flux:sidebar.item>
-            <flux:sidebar.item icon="inbox" badge="12" href="#">Inbox</flux:sidebar.item>
-            <flux:sidebar.item icon="document-text" href="#">Documents</flux:sidebar.item>
-            <flux:sidebar.item icon="calendar" href="#">Calendar</flux:sidebar.item>
+                <flux:menu.separator />
 
-            <flux:sidebar.group expandable heading="Favorites" class="grid">
-                <flux:sidebar.item href="#">Marketing site</flux:sidebar.item>
-                <flux:sidebar.item href="#">Android app</flux:sidebar.item>
-                <flux:sidebar.item href="#">Brand guidelines</flux:sidebar.item>
-            </flux:sidebar.group>
-        </flux:sidebar.nav>
+                <form method="POST" action="{{ route('logout') }}">
+                    @csrf
+                    <flux:menu.item as="button" type="submit" icon="arrow-right-start-on-rectangle" class="w-full">
+                        {{ __('Log out') }}
+                    </flux:menu.item>
+                </form>
+            </flux:menu>
+        </flux:dropdown>
+    @endauth
+</flux:header>
 
-        <flux:sidebar.spacer />
+<flux:sidebar sticky collapsible="mobile" class="lg:hidden bg-zinc-50 dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-700">
+    <flux:sidebar.header>
+        <flux:sidebar.brand
+            href="#"
+            logo="https://fluxui.dev/img/demo/logo.png"
+            logo:dark="https://fluxui.dev/img/demo/dark-mode-logo.png"
+            name="Acme Inc."
+        />
 
-        <flux:sidebar.nav>
-            <flux:sidebar.item icon="cog-6-tooth" href="#">Settings</flux:sidebar.item>
-            <flux:sidebar.item icon="information-circle" href="#">Help</flux:sidebar.item>
-        </flux:sidebar.nav>
-    </flux:sidebar>
+        <flux:sidebar.collapse class="in-data-flux-sidebar-on-desktop:not-in-data-flux-sidebar-collapsed-desktop:-mr-2" />
+    </flux:sidebar.header>
 
-    {{ $slot }}
-    @fluxScripts
-    </body>
+    <flux:sidebar.nav>
+        <flux:sidebar.item icon="home" href="#" current>Retour & Retractations</flux:sidebar.item>
+        <flux:sidebar.item icon="inbox" badge="12" href="#">Changement d'adresse</flux:sidebar.item>
+        <flux:sidebar.item icon="document-text" href="#">Invertion colis</flux:sidebar.item>
+        <flux:sidebar.item icon="calendar" href="#">Ticket redodant</flux:sidebar.item>
+    </flux:sidebar.nav>
+
+    <flux:sidebar.spacer />
+
+    <flux:sidebar.nav>
+        <flux:sidebar.item icon="cog-6-tooth" href="#">Settings</flux:sidebar.item>
+    </flux:sidebar.nav>
+
+    @auth
+        <flux:separator />
+
+        <div class="flex items-center gap-3 px-2 py-2">
+            <flux:avatar :name="$user->name" :initials="$initials" size="sm" />
+            <div class="grid text-start leading-tight">
+                <span class="truncate text-sm font-semibold">{{ $user->name }}</span>
+                <span class="truncate text-xs text-zinc-500 dark:text-zinc-400">{{ $user->email }}</span>
+            </div>
+        </div>
+    @endauth
+</flux:sidebar>
+
+{{ $slot }}
+@fluxScripts
+</body>
 </html>

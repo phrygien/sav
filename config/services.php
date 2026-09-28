@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'cosmia' => [
+        'url'    => env('COSMIA_API_URL'),
+        'secret' => env('COSMIA_API_SECRET'),
+    ],
+
 ];
