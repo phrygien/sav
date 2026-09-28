@@ -12,7 +12,7 @@
 
         <flux:navbar class="max-lg:hidden">
             <flux:navbar.item>Retour & Retractations</flux:navbar.item>
-            <flux:navbar.item>Changement D'adresse</flux:navbar.item>
+            <flux:navbar.item>Changement d'adresse</flux:navbar.item>
             <flux:navbar.item>Invertion de colis</flux:navbar.item>
             <flux:dropdown>
                 <flux:navbar.item icon:trailing="chevron-down">Autres</flux:navbar.item>
