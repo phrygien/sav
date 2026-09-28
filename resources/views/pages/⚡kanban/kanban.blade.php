@@ -1,122 +1,208 @@
 <div>
-    <flux:main>
-        {{-- En-tête : empilé sur mobile, sur une ligne à partir de lg --}}
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-6">
-            <flux:breadcrumbs>
-                <flux:breadcrumbs.item href="#" divider="slash">Tickets</flux:breadcrumbs.item>
-                <flux:breadcrumbs.item href="#" divider="slash">Liste des tickets</flux:breadcrumbs.item>
-            </flux:breadcrumbs>
+    @php
+        $segments = ['all' => 'Tous'] + collect($projects)->mapWithKeys(fn ($p) => [$p['id'] => $p['name']])->all();
+    @endphp
 
-            {{-- Barre d'outils : colonne sur mobile, wrap sur tablette, ligne sur desktop --}}
-            <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:flex-nowrap">
+    {{-- En-tête : empilé sur mobile, sur une ligne à partir de lg --}}
+    <div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <flux:breadcrumbs>
+            <flux:breadcrumbs.item href="#" divider="slash">Tickets</flux:breadcrumbs.item>
+            <flux:breadcrumbs.item href="#" divider="slash">Liste des tickets</flux:breadcrumbs.item>
+        </flux:breadcrumbs>
 
-                {{-- Filtres : côte à côte, chacun prend 50% sur mobile --}}
-                <div class="flex gap-2 w-full sm:w-auto">
-                    <flux:select size="sm" placeholder="Choose industry..." class="flex-1 sm:w-44 sm:flex-none">
-                        <flux:select.option>Photography</flux:select.option>
-                        <flux:select.option>Design services</flux:select.option>
-                        <flux:select.option>Web development</flux:select.option>
-                        <flux:select.option>Accounting</flux:select.option>
-                        <flux:select.option>Legal services</flux:select.option>
-                        <flux:select.option>Consulting</flux:select.option>
-                        <flux:select.option>Other</flux:select.option>
-                    </flux:select>
-
-                    <flux:input icon="magnifying-glass" placeholder="Rechercher..." size="sm" class="flex-1 sm:w-48 sm:flex-none" />
-                </div>
-
-                {{-- Segmenté maison : pleine largeur sur mobile, scrollable si trop étroit (plus de max-md:hidden) --}}
-                <div
-                    x-data="{ view: 'cosma' }"
-                    class="flex w-full sm:w-auto items-center gap-1 overflow-x-auto rounded-lg bg-zinc-100 dark:bg-zinc-800 p-1"
-                >
-                    @foreach (['cosma' => 'COSMA', 'digiparf' => 'DIGIPARF', 'kalista' => 'KALISTA'] as $key => $label)
-                        <button
-                            type="button"
-                            @click="view = '{{ $key }}'"
-                            :class="view === '{{ $key }}'
-                                ? 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white shadow-sm'
-                                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'"
-                            class="flex-1 sm:flex-none whitespace-nowrap px-3 py-1 text-sm font-medium rounded-md transition-colors"
-                        >
-                            {{ $label }}
-                        </button>
+        {{-- Barre d'outils : colonne sur mobile, wrap sur tablette, ligne sur desktop --}}
+        <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:flex-nowrap">
+            <div class="flex w-full gap-2 sm:w-auto">
+                <flux:select wire:model.live="labelId" size="sm" class="flex-1 sm:w-48 sm:flex-none">
+                    <flux:select.option value="">{{ __('Toutes catégories') }}</flux:select.option>
+                    @foreach ($this::LABELS as $id => $name)
+                        <flux:select.option :value="$id">{{ $name }}</flux:select.option>
                     @endforeach
-                </div>
+                </flux:select>
 
-                {{-- Équipe + Invite : sur sa propre ligne en mobile, poussé à droite dès sm --}}
-                <div class="flex items-center justify-between gap-3 sm:ml-auto lg:ml-0">
-                    <flux:separator vertical class="my-2 max-sm:hidden" />
+                <flux:input
+                    wire:model.live.debounce.400ms="search"
+                    icon="magnifying-glass"
+                    placeholder="Rechercher..."
+                    size="sm"
+                    class="flex-1 sm:w-48 sm:flex-none"
+                />
+            </div>
 
-                    <flux:avatar.group class="**:ring-white dark:**:ring-zinc-800">
-                        @foreach (['Caleb Porzio', 'River Porzio', 'Knox Porzio'] as $item)
-                            <flux:avatar size="sm" tooltip name="{{ $item }}" src="https://i.pravatar.cc/100?img={{ $loop->index + 12 }}" />
-                        @endforeach
+            {{-- Segmenté par projet --}}
+            <div class="flex w-full items-center gap-1 overflow-x-auto rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800 sm:w-auto">
+                @foreach ($segments as $id => $label)
+                    <button
+                        type="button"
+                        wire:key="seg-{{ $id }}"
+                        wire:click="setProject('{{ $id }}')"
+                        class="flex-1 whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-colors sm:flex-none
+                            {{ (string) $projectId === (string) $id
+                                ? 'bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-white'
+                                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
+                    >
+                        {{ $label }}
+                    </button>
+                @endforeach
+            </div>
+        </div>
+    </div>
 
-                        <flux:avatar size="sm">3+</flux:avatar>
-                    </flux:avatar.group>
+    {{-- Board : drag & drop Alpine --}}
+    <div
+        x-data="{ dragging: null, from: null, over: null, notice: null, timer: null }"
+        @ticket-moved.window="
+            notice = $event.detail.message;
+            clearTimeout(timer);
+            timer = setTimeout(() => notice = null, 2500);
+        "
+    >
+        {{-- Barre de statut du drag & drop --}}
+        <div class="mb-3 flex h-6 items-center text-sm" aria-live="polite">
+            {{-- 1. Pendant le drag --}}
+            <div x-show="dragging !== null" x-cloak class="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+                <flux:icon.arrows-right-left variant="mini" class="size-4" />
+                <span>{{ __('Déposez le ticket dans une colonne pour changer son statut') }}</span>
+            </div>
 
-                    <flux:button variant="filled" size="sm">Invite</flux:button>
-                </div>
+            {{-- 2. Pendant l'appel API --}}
+            <div
+                wire:loading.flex
+                wire:target="moveTicket"
+                class="items-center gap-2 text-blue-600 dark:text-blue-400"
+            >
+                <flux:icon.loading variant="mini" class="size-4" />
+                <span>{{ __('Mise à jour du statut en cours…') }}</span>
+            </div>
+
+            {{-- 3. Confirmation après succès --}}
+            <div
+                x-show="notice && dragging === null"
+                x-cloak
+                x-transition.opacity
+                wire:loading.remove
+                wire:target="moveTicket"
+                class="flex items-center gap-2 text-green-600 dark:text-green-400"
+            >
+                <flux:icon.check-circle variant="mini" class="size-4" />
+                <span x-text="notice"></span>
             </div>
         </div>
 
-        {{-- Board : scroll horizontal avec snap sur mobile --}}
-        <div class="overflow-x-auto -mx-6 px-6 pb-4 snap-x snap-mandatory sm:snap-none scroll-px-6">
-            <div class="flex gap-4 w-max">
-                @foreach ($this->columns as $column)
-                    {{-- Largeur : 85% de l'écran sur mobile (on devine la colonne suivante), 20rem dès sm --}}
-                    <div class="snap-start shrink-0 w-[85vw] max-w-80 sm:w-80">
-                        <div class="rounded-lg bg-zinc-400/5 dark:bg-zinc-900">
-                            <div class="px-4 py-4 flex justify-between items-start gap-2">
+        {{-- Scroll horizontal (mobile) uniquement --}}
+        <div
+            wire:loading.class="opacity-50"
+            wire:target="setProject,labelId,search"
+            class="snap-x snap-mandatory overflow-x-auto pb-4 transition-opacity sm:snap-none"
+        >
+            {{-- Hauteur fixe : ce sont les colonnes qui scrollent, pas la page --}}
+            <div class="flex h-[calc(100dvh-17rem)] min-h-96 w-max gap-4 sm:w-full">
+                @foreach ($this::STATUSES as $status => $meta)
+                    @php
+                        $column    = $columns[$status] ?? ['tickets' => [], 'page' => 1, 'lastPage' => 1, 'total' => 0, 'error' => null];
+                        $remaining = max($column['total'] - count($column['tickets']), 0);
+                        $hasMore   = $remaining > 0 && ! $column['error'] && $column['page'] < $column['lastPage'];
+                    @endphp
+
+                    <div wire:key="col-{{ $status }}" class="h-full w-[85vw] max-w-80 shrink-0 snap-start sm:min-w-72 sm:max-w-none sm:flex-1">
+                        {{-- Zone de dépôt --}}
+                        <div
+                            class="flex h-full flex-col rounded-lg bg-zinc-400/5 transition-colors dark:bg-zinc-900"
+                            :class="over === '{{ $status }}' && from !== '{{ $status }}' && 'ring-2 ring-blue-400/60 bg-blue-500/5'"
+                            @dragover.prevent="over = '{{ $status }}'"
+                            @dragleave="if (! $el.contains($event.relatedTarget)) over = null"
+                            @drop.prevent="
+                                if (dragging !== null && from !== '{{ $status }}') {
+                                    $wire.moveTicket(dragging, '{{ $status }}')
+                                }
+                                dragging = null; from = null; over = null
+                            "
+                        >
+                            {{-- En-tête de colonne (fixe) --}}
+                            <div class="flex shrink-0 items-start justify-between gap-2 px-4 py-4">
                                 <div class="min-w-0">
-                                    <flux:heading class="truncate">{{ $column['title'] }}</flux:heading>
-                                    <flux:text class="mb-0! mt-2">{{ count($column['cards']) }} tasks</flux:text>
+                                    <div class="flex items-center gap-2">
+                                        <span class="size-2 rounded-full {{ $meta['dot'] }}"></span>
+                                        <flux:heading class="truncate">{{ $meta['title'] }}</flux:heading>
+                                    </div>
+                                    <flux:text class="mb-0! mt-2">{{ number_format($column['total'], 0, ',', ' ') }} tickets</flux:text>
                                 </div>
-                                <flux:button variant="subtle" icon="ellipsis-horizontal" size="sm" />
                             </div>
 
-                            <div class="flex flex-col gap-2 px-2">
-                                @foreach ($column['cards'] as $card)
-                                    <div class="bg-white rounded-lg shadow-xs border border-zinc-200 dark:border-white/10 dark:bg-zinc-800 p-3 space-y-2">
+                            {{-- Liste scrollable : gap-4 = espace entre les cartes, px-6 = largeur des cartes réduite --}}
+                            <div class="flex min-h-16 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-10 pb-3">
+                                @if ($column['error'])
+                                    <flux:callout variant="danger" icon="exclamation-circle" :heading="$column['error']" />
+                                @elseif (empty($column['tickets']))
+                                    <flux:text class="py-6 text-center">{{ __('Aucun ticket') }}</flux:text>
+                                @endif
+
+                                @foreach ($column['tickets'] as $card)
+                                    <div
+                                        wire:key="card-{{ $card['id'] }}"
+                                        draggable="true"
+                                        @dragstart="
+                                            dragging = @js($card['id']);
+                                            from = '{{ $status }}';
+                                            $event.dataTransfer.effectAllowed = 'move';
+                                            $event.dataTransfer.setData('text/plain', String(dragging));
+                                        "
+                                        @dragend="dragging = null; from = null; over = null"
+                                        :class="dragging === @js($card['id']) && 'opacity-40'"
+                                        class="shrink-0 cursor-grab space-y-2 rounded-lg border border-zinc-200 bg-white p-3 shadow-xs active:cursor-grabbing dark:border-white/10 dark:bg-zinc-800"
+                                    >
                                         <div class="flex flex-wrap gap-2">
-                                            @foreach ($card['badges'] as $badge)
-                                                <flux:badge :color="$badge['color']" size="sm">{{ $badge['title'] }}</flux:badge>
-                                            @endforeach
+                                            @if ($card['label'])
+                                                <flux:badge color="blue" size="sm">{{ $card['label'] }}</flux:badge>
+                                            @endif
+
+                                            @if ($card['attention'])
+                                                <flux:badge color="amber" size="sm">{{ __('Attention') }}</flux:badge>
+                                            @endif
+
+                                            @if ($projectId === 'all' && $card['project'])
+                                                <flux:badge color="zinc" size="sm">{{ $card['project'] }}</flux:badge>
+                                            @endif
                                         </div>
 
-                                        <flux:heading class="break-words">{{ $card['title'] }}</flux:heading>
+                                        <flux:heading class="break-words">{{ $card['subject'] ?: __('(sans objet)') }}</flux:heading>
 
-                                        @if (!empty($card['assignees']))
-                                            <div class="flex justify-end">
-                                                <flux:avatar.group class="**:ring-white dark:**:ring-zinc-800">
-                                                    @foreach (array_slice($card['assignees'], 0, 3) as $assignee)
-                                                        <flux:avatar
-                                                            size="xs"
-                                                            tooltip="{{ $assignee['name'] }}"
-                                                            :src="$assignee['src'] ?? null"
-                                                            :name="$assignee['name']"
-                                                            :color="$this->colorForName($assignee['name'])"
-                                                        />
-                                                    @endforeach
+                                        <flux:text class="text-xs">
+                                            {{ $card['num'] }}@if ($card['date']) • {{ $card['date'] }}@endif
+                                            @if ($card['order']) • {{ __('Cmd') }} {{ $card['order'] }}@endif
+                                        </flux:text>
 
-                                                    @if (count($card['assignees']) > 3)
-                                                        <flux:avatar size="xs">{{ count($card['assignees']) - 3 }}+</flux:avatar>
-                                                    @endif
-                                                </flux:avatar.group>
-                                            </div>
-                                        @endif
+                                        <div class="flex items-center justify-between gap-2">
+                                            <flux:text class="min-w-0 truncate text-xs">{{ $card['client'] }}</flux:text>
+
+                                            <flux:avatar
+                                                size="xs"
+                                                tooltip="{{ $card['client'] }}"
+                                                :name="$card['client']"
+                                                :color="$this->colorForName($card['client'])"
+                                            />
+                                        </div>
                                     </div>
                                 @endforeach
-                            </div>
 
-                            <div class="px-2 py-2">
-                                <flux:button variant="subtle" icon="plus" size="sm" class="w-full justify-start!">New task</flux:button>
+                                {{-- Sentinelle du scroll infini.
+                                     La clé change à chaque chargement : l'élément est recréé et l'observateur
+                                     se redéclenche si la colonne n'est pas encore remplie. --}}
+                                @if ($hasMore)
+                                    <div
+                                        wire:key="sentinel-{{ $status }}-{{ count($column['tickets']) }}"
+                                        x-intersect.margin.200px="$wire.loadMore('{{ $status }}')"
+                                        class="flex shrink-0 items-center justify-center gap-2 py-3 text-xs text-zinc-500 dark:text-zinc-400"
+                                    >
+                                        <flux:icon.loading variant="mini" class="size-4" />
+                                        <span>{{ __('Chargement…') }}</span>
+                                    </div>
+                                @endif
                             </div>
                         </div>
                     </div>
                 @endforeach
             </div>
         </div>
-    </flux:main>
+    </div>
 </div>
