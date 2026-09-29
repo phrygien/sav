@@ -1209,9 +1209,8 @@ new class extends Component
 
                                 <div class="flex flex-wrap items-center gap-2">
                                     @if (! empty($details['need_attention']))
-                                        <flux:button size="sm" variant="filled" wire:click="$set('showReadModal', true)">
+                                        <flux:button size="sm" variant="danger" wire:click="$set('showReadModal', true)">
                                             <span class="flex items-center gap-2">
-                                                <i class="hgi-stroke hgi-tick-02"></i>
                                                 <span>{{ __('Marquer comme lu') }}</span>
                                             </span>
                                         </flux:button>
@@ -1750,7 +1749,7 @@ new class extends Component
                 <div class="flex gap-2">
                     <flux:spacer />
                     <flux:modal.close><flux:button variant="danger">{{ __('Annuler') }}</flux:button></flux:modal.close>
-                    <flux:button variant="danger" wire:click="confirmerActionLu">{{ __('Confirmer') }}</flux:button>
+                    <flux:button variant="primary" wire:click="confirmerActionLu">{{ __('Confirmer') }}</flux:button>
                 </div>
             </div>
         </flux:modal>
