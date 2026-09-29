@@ -70,14 +70,13 @@ new #[Layout('layouts::auth.split')] class extends Component
 
         RateLimiter::clear($key);
 
-        // ⚠️ Adapter aux clés réellement renvoyées par l'API
         $data = $response->json();
 
         $user = User::updateOrCreate(
             ['email' => $this->email],
             [
                 'name'     => data_get($data, 'user.name', $this->email),
-                'password' => Hash::make(Str::random(40)), // le vrai mot de passe reste côté API
+                'password' => Hash::make(Str::random(40)),
             ]
         );
 
@@ -85,6 +84,12 @@ new #[Layout('layouts::auth.split')] class extends Component
         session()->regenerate();
         session(['cosmia_token' => data_get($data, 'token')]);
 
-        $this->redirectIntended(route('dashboard'), navigate: true);
+        // Verification redirection
+        if ($data['role'] == 'super_admin') {
+
+            $this->redirectIntended(route('dashboard'), navigate: true);
+        } else {
+            $this->redirectIntended(route('kanban'), navigate: true);
+        }
     }
 };

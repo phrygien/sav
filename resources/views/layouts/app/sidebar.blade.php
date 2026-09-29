@@ -20,10 +20,11 @@
     <flux:brand href="#" logo="https://fluxui.dev/img/demo/dark-mode-logo.png" name="Acme Inc." class="max-lg:hidden! hidden dark:flex" />
 
     <flux:navbar class="max-lg:hidden">
-        <flux:navbar.item>Retour & Retractations</flux:navbar.item>
-        <flux:navbar.item>Changement d'adresse</flux:navbar.item>
-        <flux:navbar.item>Invertion de colis</flux:navbar.item>
-        <flux:navbar.item href="#">Ticket redodant</flux:navbar.item>
+        <flux:navbar.item href="{{ route('kanban') }}" wire:navigate>Toutes les demandes</flux:navbar.item>
+        <flux:navbar.item href="{{ route('kanban.retour.retractation') }}" wire:navigate>Retour & Retractations</flux:navbar.item>
+        <flux:navbar.item href="{{ route('kanban.changement.adresse') }}" wire:navigate>Changement d'adresse</flux:navbar.item>
+        <flux:navbar.item href="{{ route('kanban.invertion.colis') }}" wire:navigate>Invertion de colis</flux:navbar.item>
+        <flux:navbar.item href="{{ route('tiket.redondant')  }}" wire:navigate>Tickets redondants</flux:navbar.item>
     </flux:navbar>
 
     <flux:spacer />
@@ -72,7 +73,7 @@
     </flux:sidebar.header>
 
     <flux:sidebar.nav>
-        <flux:sidebar.item icon="home" href="#" current>Retour & Retractations</flux:sidebar.item>
+        <flux:sidebar.item icon="home" href="{{ route('kanban.retour.retractation') }}" wire:navigate current>Retour & Retractations</flux:sidebar.item>
         <flux:sidebar.item icon="inbox" badge="12" href="#">Changement d'adresse</flux:sidebar.item>
         <flux:sidebar.item icon="document-text" href="#">Invertion colis</flux:sidebar.item>
         <flux:sidebar.item icon="calendar" href="#">Ticket redodant</flux:sidebar.item>
