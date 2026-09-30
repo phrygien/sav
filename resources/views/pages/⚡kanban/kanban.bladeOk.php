@@ -1,8 +1,6 @@
 <div>
     @php
-        $isAdmin  = $this->allowedProjectIds === null;
-        $segments = ($isAdmin ? ['all' => 'Tous'] : [])
-            + collect($projects)->mapWithKeys(fn ($p) => [$p['id'] => $p['name']])->all();
+        $segments = ['all' => 'Tous'] + collect($projects)->mapWithKeys(fn ($p) => [$p['id'] => $p['name']])->all();
 
         // Thèmes pastel (classes littérales pour que Tailwind les détecte)
         $themes = [
@@ -84,36 +82,24 @@
                 />
             </div>
 
-            {{-- Segmenté par projet (masqué pour un non-admin avec un seul projet) --}}
-            @if ($isAdmin || count($segments) > 1)
-                <div class="flex w-full items-center gap-1 overflow-x-auto rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800 sm:w-auto">
-                    @foreach ($segments as $id => $label)
-                        <button
-                            type="button"
-                            wire:key="seg-{{ $id }}"
-                            wire:click="setProject('{{ $id }}')"
-                            class="flex-1 whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-colors sm:flex-none
-                                {{ (string) $projectId === (string) $id
-                                    ? 'bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-white'
-                                    : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
-                        >
-                            {{ $label }}
-                        </button>
-                    @endforeach
-                </div>
-            @endif
+            {{-- Segmenté par projet --}}
+            <div class="flex w-full items-center gap-1 overflow-x-auto rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800 sm:w-auto">
+                @foreach ($segments as $id => $label)
+                    <button
+                        type="button"
+                        wire:key="seg-{{ $id }}"
+                        wire:click="setProject('{{ $id }}')"
+                        class="flex-1 whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-colors sm:flex-none
+                            {{ (string) $projectId === (string) $id
+                                ? 'bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-white'
+                                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
+                    >
+                        {{ $label }}
+                    </button>
+                @endforeach
+            </div>
         </div>
     </div>
-
-    {{-- Non-admin sans projet affecté --}}
-    @if (! $isAdmin && empty($projects))
-        <flux:callout
-            class="mb-4"
-            icon="information-circle"
-            :heading="__('Aucun projet ne vous est affecté.')"
-            :text="__('Contactez un administrateur pour accéder aux tickets.')"
-        />
-    @endif
 
     {{-- Board : drag & drop Alpine --}}
     <div

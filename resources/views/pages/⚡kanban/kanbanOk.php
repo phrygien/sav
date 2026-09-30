@@ -4,7 +4,6 @@ use App\Services\CosmiaApi;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
-use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 new class extends Component
@@ -37,26 +36,15 @@ new class extends Component
         'fuchsia', 'pink', 'rose',
     ];
 
-    /** Projets visibles par l'utilisateur connecté */
     public array $projects = [];
-
-    /**
-     * null = accès à tous les projets (super_admin) ;
-     * sinon liste d'ids de projets autorisés (string).
-     * Verrouillé : non modifiable depuis le navigateur.
-     */
-    #[Locked]
-    public ?array $allowedProjectIds = null;
-
-    /** Projet affiché ('all' réservé au super_admin). Verrouillé : change via setProject(). */
-    #[Locked]
-    public string $projectId = 'all';
 
     /** @var array<int, string> [id => nom] des utilisateurs assignables (treating = 1) */
     public array $users = [];
 
     /** @var array<int, string> [id => nom] de tous les utilisateurs (pour afficher l'assigné d'une carte) */
     public array $userNames = [];
+
+    public string $projectId = 'all';
 
     public string $labelId = '';
 
@@ -65,7 +53,7 @@ new class extends Component
     /** Filtre « Ticket qui m'est assigné » */
     public bool $mine = false;
 
-    /** Id Cosmia de l'utilisateur connecté (affichage uniquement, les actions utilisent currentUserId()) */
+    /** Id Cosmia de l'utilisateur connecté (affichage uniquement, l'action utilise currentUserId()) */
     public ?int $meId = null;
 
     /** @var array<string, array{tickets: array, page: int, lastPage: int, total: int, error: ?string}> */
@@ -73,30 +61,13 @@ new class extends Component
 
     public function mount(): void
     {
-        $api = app(CosmiaApi::class);
+        try {
+            $this->projects = app(CosmiaApi::class)->get('/project');
+        } catch (\RuntimeException) {
+            $this->projects = [];
+        }
 
         $this->meId = $this->currentUserId();
-        $this->allowedProjectIds = $this->resolveAllowedProjectIds($api);
-
-        try {
-            $projects = $api->get('/project');
-        } catch (\RuntimeException) {
-            $projects = [];
-        }
-
-        // Non-admin : on ne garde que les projets auxquels l'utilisateur est affecté
-        $this->projects = $this->allowedProjectIds === null
-            ? $projects
-            : collect($projects)
-                ->filter(fn ($p) => in_array((string) $p['id'], $this->allowedProjectIds, true))
-                ->values()
-                ->all();
-
-        // Non-admin : pas de vue « Tous », on démarre sur son premier projet
-        if ($this->allowedProjectIds !== null) {
-            $this->projectId = isset($this->projects[0]) ? (string) $this->projects[0]['id'] : '';
-        }
-
         $this->loadUsers();
         $this->loadAll();
     }
@@ -108,11 +79,6 @@ new class extends Component
 
     public function setProject(string $id): void
     {
-        // Non-admin : uniquement ses propres projets, et pas de « all »
-        if ($this->allowedProjectIds !== null && ! in_array($id, $this->allowedProjectIds, true)) {
-            return;
-        }
-
         $this->projectId = $id;
         $this->loadAll();
     }
@@ -156,7 +122,6 @@ new class extends Component
 
     /**
      * Drag & drop : déplace un ticket vers une autre colonne et met à jour son statut via l'API.
-     * Ne travaille que sur les tickets déjà chargés (donc filtrés par projet).
      */
     public function moveTicket(int|string $id, string $to): void
     {
@@ -251,17 +216,6 @@ new class extends Component
 
     private function applyAssignment(int|string $id, int $userId, string $name, bool $taken = false): void
     {
-        // Le ticket doit être affiché sur le board (donc dans un projet autorisé)
-        $visible = collect($this->columns)
-            ->flatMap(fn ($c) => $c['tickets'])
-            ->contains(fn ($t) => (string) $t['id'] === (string) $id);
-
-        if (! $visible) {
-            $this->dispatch('ticket-moved', message: __('Ticket introuvable.'));
-
-            return;
-        }
-
         try {
             // Passer en post() si ton workflow n8n attend un POST
             app(CosmiaApi::class)->put("/ticket/{$id}", ['user_id' => $userId]);
@@ -305,68 +259,20 @@ new class extends Component
     }
 
     /**
-     * Payload du JWT Cosmia (session), ou tableau vide.
+     * Id de l'utilisateur connecté, lu dans le payload du JWT Cosmia (session).
      */
-    private function jwtPayload(): array
+    private function currentUserId(): ?int
     {
         $token   = session('cosmia_token');
         $payload = is_string($token) ? (explode('.', $token)[1] ?? null) : null;
 
         if (! $payload) {
-            return [];
-        }
-
-        return json_decode((string) base64_decode(strtr($payload, '-_', '+/')), true) ?: [];
-    }
-
-    /**
-     * Id de l'utilisateur connecté, lu dans le payload du JWT Cosmia.
-     */
-    private function currentUserId(): ?int
-    {
-        $data = $this->jwtPayload();
-
-        return isset($data['id']) ? (int) $data['id'] : null;
-    }
-
-    private function isSuperAdmin(): bool
-    {
-        $role = session('cosmia_role') ?? ($this->jwtPayload()['role'] ?? null);
-
-        return $role === 'super_admin';
-    }
-
-    /**
-     * null = super_admin (tous les projets).
-     * Sinon les ids de projets de l'utilisateur, via GET /user/userproject/{id}
-     * (result[].project_id). En cas d'erreur on refuse tout (fail closed).
-     *
-     * @return array<int, string>|null
-     */
-    private function resolveAllowedProjectIds(CosmiaApi $api): ?array
-    {
-        if ($this->isSuperAdmin()) {
             return null;
         }
 
-        $me = $this->currentUserId();
+        $data = json_decode((string) base64_decode(strtr($payload, '-_', '+/')), true) ?: [];
 
-        if ($me === null) {
-            return [];
-        }
-
-        try {
-            $response = $api->get('/user/userproject/'.$me);
-        } catch (\RuntimeException) {
-            return [];
-        }
-
-        return collect($response['result'] ?? [])
-            ->pluck('project_id')
-            ->map(fn ($id) => (string) $id)
-            ->unique()
-            ->values()
-            ->all();
+        return isset($data['id']) ? (int) $data['id'] : null;
     }
 
     private function loadUsers(): void
@@ -405,22 +311,9 @@ new class extends Component
 
     private function fetchColumn(string $status, int $page): void
     {
-        // Non-admin : jamais de requête hors de ses projets
-        if (
-            $this->allowedProjectIds !== null
-            && ! in_array((string) $this->projectId, $this->allowedProjectIds, true)
-        ) {
-            $this->columns[$status] = [
-                'tickets' => [], 'page' => 1, 'lastPage' => 1, 'total' => 0, 'error' => null,
-            ];
-
-            return;
-        }
-
         $previous = $this->columns[$status]['tickets'] ?? [];
 
-        // project_id : filtre confirmé (GET /ticket?project_id=X)
-        // ⚠️ À confirmer côté API : page, per_page, status, label_id, search, user_id
+        // ⚠️ Noms des paramètres à confirmer côté API (page, per_page, status, project_id, label_id, search)
         $query = array_filter([
             'page'       => $page,
             'per_page'   => self::PER_PAGE,
@@ -490,4 +383,3 @@ new class extends Component
         ];
     }
 };
-?>

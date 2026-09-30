@@ -10,17 +10,11 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
-class CosmiaApi
+class CosmiaApiOk
 {
-    /**
-     * @param  bool  $withUserToken  false = appel avec la seule clé x-secret-key (sans Bearer)
-     */
-    public function get(string $path, array $query = [], bool $withUserToken = true): array
+    public function get(string $path, array $query = []): array
     {
-        return $this->send(
-            fn (PendingRequest $request) => $request->get($path, $query),
-            $withUserToken
-        );
+        return $this->send(fn (PendingRequest $request) => $request->get($path, $query));
     }
 
     public function post(string $path, array $body = []): array
@@ -78,6 +72,7 @@ class CosmiaApi
         foreach ($paths as $key => $path) {
             $response = $responses[(string) $key] ?? null;
 
+            // En cas d'échec de connexion, on reçoit une exception au lieu d'une Response
             $results[$key] = ($response instanceof Response && $response->successful())
                 ? ($response->json() ?? [])
                 : null;
@@ -89,7 +84,7 @@ class CosmiaApi
     /**
      * @throws RuntimeException Le message est directement affichable à l'utilisateur.
      */
-    private function send(Closure $call, bool $withUserToken = true): array
+    private function send(Closure $call): array
     {
         $request = Http::baseUrl(config('services.cosmia.url'))
             ->withHeaders(['x-secret-key' => config('services.cosmia.secret')])
@@ -97,7 +92,7 @@ class CosmiaApi
             ->asJson()
             ->timeout(15);
 
-        if ($withUserToken && ($token = session('cosmia_token'))) {
+        if ($token = session('cosmia_token')) {
             $request = $request->withToken($token);
         }
 
