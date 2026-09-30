@@ -24,12 +24,38 @@
         <flux:navbar.item href="{{ route('kanban.retour.retractation') }}" wire:navigate>Retour & Retractations</flux:navbar.item>
         <flux:navbar.item href="{{ route('kanban.changement.adresse') }}" wire:navigate>Changement d'adresse</flux:navbar.item>
         <flux:navbar.item href="{{ route('kanban.invertion.colis') }}" wire:navigate>Invertion de colis</flux:navbar.item>
-        <flux:navbar.item href="{{ route('tiket.redondant')  }}" wire:navigate>Tickets redondants</flux:navbar.item>
+        <flux:navbar.item href="{{ route('tiket.redondant') }}" wire:navigate>Tickets redondants</flux:navbar.item>
     </flux:navbar>
 
     <flux:spacer />
 
     @auth
+        @can('manage-access')
+            <flux:dropdown>
+                <flux:navbar.item icon:trailing="chevron-down">Accès & Sécurité</flux:navbar.item>
+
+                <flux:navmenu>
+                    <flux:navmenu.item href="{{ route('users.list') }}" wire:navigate icon="users">
+                        Utilisateurs
+                    </flux:navmenu.item>
+
+                    @can('create-user')
+                        <flux:navmenu.item href="{{ route('users.create') }}" wire:navigate icon="user-plus">
+                            Ajouter un utilisateur
+                        </flux:navmenu.item>
+                    @endcan
+
+                    @can('assign-user-project')
+                        <flux:navmenu.item href="#" icon="link">
+                            Associer un utilisateur à un projet
+                        </flux:navmenu.item>
+                    @endcan
+                </flux:navmenu>
+            </flux:dropdown>
+
+            <flux:separator vertical class="my-2 mx-2" />
+        @endcan
+
         <flux:dropdown position="bottom" align="end">
             <flux:profile
                 :initials="$initials"
@@ -73,11 +99,25 @@
     </flux:sidebar.header>
 
     <flux:sidebar.nav>
-        <flux:sidebar.item icon="home" href="{{ route('kanban.retour.retractation') }}" wire:navigate current>Retour & Retractations</flux:sidebar.item>
-        <flux:sidebar.item icon="inbox" badge="12" href="#">Changement d'adresse</flux:sidebar.item>
-        <flux:sidebar.item icon="document-text" href="#">Invertion colis</flux:sidebar.item>
-        <flux:sidebar.item icon="calendar" href="#">Ticket redodant</flux:sidebar.item>
+        <flux:sidebar.item icon="home" href="{{ route('kanban') }}" wire:navigate>Toutes les demandes</flux:sidebar.item>
+        <flux:sidebar.item icon="arrow-uturn-left" href="{{ route('kanban.retour.retractation') }}" wire:navigate>Retour & Retractations</flux:sidebar.item>
+        <flux:sidebar.item icon="inbox" href="{{ route('kanban.changement.adresse') }}" wire:navigate>Changement d'adresse</flux:sidebar.item>
+        <flux:sidebar.item icon="document-text" href="{{ route('kanban.invertion.colis') }}" wire:navigate>Invertion colis</flux:sidebar.item>
+        <flux:sidebar.item icon="calendar" href="{{ route('tiket.redondant') }}" wire:navigate>Tickets redondants</flux:sidebar.item>
     </flux:sidebar.nav>
+
+    @can('manage-access')
+        <flux:sidebar.group expandable heading="Accès & Sécurité" class="grid">
+            <flux:sidebar.item icon="users" href="{{ route('users.list') }}" wire:navigate>Utilisateurs</flux:sidebar.item>
+
+            @can('create-user')
+                <flux:sidebar.item icon="user-plus" href="{{ route('users.create') }}" wire:navigate>
+                    Ajouter un utilisateur
+                </flux:sidebar.item>
+            @endcan
+
+        </flux:sidebar.group>
+    @endcan
 
     <flux:sidebar.spacer />
 

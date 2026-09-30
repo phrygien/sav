@@ -14,6 +14,15 @@ Route::middleware(['jwt-session-auth'])->group(function () {
     Route::livewire('/kanban-changement-adresse', 'pages::kanban-changement-adresse')->name('kanban.changement.adresse');
     Route::livewire('/kanban-invertion-colis', 'pages::kanban-invertion-colis')->name('kanban.invertion.colis');
     Route::livewire('/tiket-redondant', 'pages::tiket-redondant')->name('tiket.redondant');
+
+    // Manage Users
+    Route::middleware('can:manage-access')->group(function () {
+        Route::livewire('/users', 'pages::users.list')->name('users.list');
+        Route::livewire('/users/create', 'pages::users.create')
+            ->middleware('can:create-user')
+            ->name('users.create');
+        Route::livewire("/users/edit/{user}", 'pages::users.edit')->name('users.edit');
+    });
 });
 
 require __DIR__.'/settings.php';

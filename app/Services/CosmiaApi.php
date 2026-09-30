@@ -5,6 +5,8 @@ namespace App\Services;
 use Closure;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -23,6 +25,60 @@ class CosmiaApi
     public function put(string $path, array $body = []): array
     {
         return $this->send(fn (PendingRequest $request) => $request->put($path, $body));
+    }
+
+    public function delete(string $path, array $query = []): array
+    {
+        return $this->send(fn (PendingRequest $request) => $request->delete($path, $query));
+    }
+
+    /**
+     * Lance plusieurs GET en parallèle.
+     *
+     * @param  array<string|int, string>  $paths  [clé => chemin]
+     * @return array<string|int, array|null>  [clé => réponse JSON, ou null si cet appel a échoué]
+     */
+    public function getMany(array $paths): array
+    {
+        if (empty($paths)) {
+            return [];
+        }
+
+        $token = session('cosmia_token');
+
+        $responses = Http::pool(function (Pool $pool) use ($paths, $token) {
+            $calls = [];
+
+            foreach ($paths as $key => $path) {
+                $request = $pool->as((string) $key)
+                    ->baseUrl(config('services.cosmia.url'))
+                    ->withHeaders(['x-secret-key' => config('services.cosmia.secret')])
+                    ->acceptJson()
+                    ->asJson()
+                    ->timeout(15);
+
+                if ($token) {
+                    $request = $request->withToken($token);
+                }
+
+                $calls[] = $request->get($path);
+            }
+
+            return $calls;
+        });
+
+        $results = [];
+
+        foreach ($paths as $key => $path) {
+            $response = $responses[(string) $key] ?? null;
+
+            // En cas d'échec de connexion, on reçoit une exception au lieu d'une Response
+            $results[$key] = ($response instanceof Response && $response->successful())
+                ? ($response->json() ?? [])
+                : null;
+        }
+
+        return $results;
     }
 
     /**

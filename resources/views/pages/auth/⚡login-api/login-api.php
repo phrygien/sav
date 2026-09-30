@@ -75,18 +75,19 @@ new #[Layout('layouts::auth.split')] class extends Component
         $user = User::updateOrCreate(
             ['email' => $this->email],
             [
-                'name'     => data_get($data, 'user.name', $this->email),
+                'name'     => data_get($data, 'name', $this->email),
                 'password' => Hash::make(Str::random(40)),
             ]
         );
 
         Auth::login($user, $this->remember);
         session()->regenerate();
-        session(['cosmia_token' => data_get($data, 'token')]);
+        session([
+            'cosmia_token' => data_get($data, 'token'),
+            'cosmia_role'  => data_get($data, 'role'),
+        ]);
 
-        // Verification redirection
-        if ($data['role'] == 'super_admin') {
-
+        if (data_get($data, 'role') === 'super_admin') {
             $this->redirectIntended(route('dashboard'), navigate: true);
         } else {
             $this->redirectIntended(route('kanban'), navigate: true);
