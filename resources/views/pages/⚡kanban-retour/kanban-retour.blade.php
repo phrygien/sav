@@ -1,6 +1,8 @@
 <div>
     @php
-        $segments = ['all' => 'Tous'] + collect($projects)->mapWithKeys(fn ($p) => [$p['id'] => $p['name']])->all();
+        $isAdmin  = $this->allowedProjectIds === null;
+        $segments = ($isAdmin ? ['all' => 'Tous'] : [])
+            + collect($projects)->mapWithKeys(fn ($p) => [$p['id'] => $p['name']])->all();
 
         // Thèmes pastel (classes littérales pour que Tailwind les détecte)
         $themes = [
@@ -35,7 +37,7 @@
         $canTake = $meId !== null && isset($users[$meId]); // seuls les utilisateurs treating = 1
     @endphp
 
-    {{-- En-tête : empilé sur mobile, sur une ligne à partir de lg --}}
+    {{-- En-tête --}}
     <div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <flux:breadcrumbs>
             <flux:breadcrumbs.item href="#" divider="slash">Equipes </flux:breadcrumbs.item>
@@ -63,7 +65,6 @@
             </flux:button>
         </flux:breadcrumbs>
 
-        {{-- Barre d'outils : colonne sur mobile, wrap sur tablette, ligne sur desktop --}}
         <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:flex-nowrap">
             <div class="flex w-full gap-2 sm:w-auto">
                 <flux:select wire:model.live="labelId" size="sm" class="flex-1 sm:w-48 sm:flex-none" disabled>
@@ -82,24 +83,45 @@
                 />
             </div>
 
-            {{-- Segmenté par projet --}}
-            <div class="flex w-full items-center gap-1 overflow-x-auto rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800 sm:w-auto">
-                @foreach ($segments as $id => $label)
-                    <button
-                        type="button"
-                        wire:key="seg-{{ $id }}"
-                        wire:click="setProject('{{ $id }}')"
-                        class="flex-1 whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-colors sm:flex-none
-                            {{ (string) $projectId === (string) $id
-                                ? 'bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-white'
-                                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
-                    >
-                        {{ $label }}
-                    </button>
-                @endforeach
-            </div>
+            {{-- Segmenté par projet (masqué pour un non-admin avec un seul projet) --}}
+            @if ($isAdmin || count($segments) > 1)
+                <div class="flex w-full items-center gap-1 overflow-x-auto rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800 sm:w-auto">
+                    @foreach ($segments as $id => $label)
+                        <button
+                            type="button"
+                            wire:key="seg-{{ $id }}"
+                            wire:click="setProject('{{ $id }}')"
+                            class="flex-1 whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-colors sm:flex-none
+                                {{ (string) $projectId === (string) $id
+                                    ? 'bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-white'
+                                    : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
+                        >
+                            {{ $label }}
+                        </button>
+                    @endforeach
+                </div>
+            @endif
         </div>
     </div>
+
+    {{-- Erreur de lecture des projets affectés --}}
+    @if ($this->projectsError)
+        <flux:callout
+            class="mb-4"
+            variant="danger"
+            icon="exclamation-circle"
+            :heading="__('Impossible de lire vos projets')"
+            :text="$this->projectsError"
+        />
+    @elseif (! $isAdmin && empty($projects))
+        {{-- Non-admin sans projet affecté --}}
+        <flux:callout
+            class="mb-4"
+            icon="information-circle"
+            :heading="__('Aucun projet ne vous est affecté.')"
+            :text="__('Contactez un administrateur pour accéder aux tickets.')"
+        />
+    @endif
 
     {{-- Board : drag & drop Alpine --}}
     <div
@@ -110,15 +132,12 @@
             timer = setTimeout(() => notice = null, 2500);
         "
     >
-        {{-- Barre de statut du drag & drop / assignation --}}
         <div class="mb-3 flex h-6 items-center text-sm" aria-live="polite">
-            {{-- 1. Pendant le drag --}}
             <div x-show="dragging !== null" x-cloak class="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
                 <flux:icon.arrows-right-left variant="mini" class="size-4" />
                 <span>{{ __('Déposez le ticket dans une colonne pour changer son statut') }}</span>
             </div>
 
-            {{-- 2. Pendant l'appel API --}}
             <div
                 wire:loading.flex
                 wire:target="moveTicket,assignTicket"
@@ -128,7 +147,6 @@
                 <span>{{ __('Mise à jour en cours…') }}</span>
             </div>
 
-            {{-- 3. Confirmation après succès --}}
             <div
                 x-show="notice && dragging === null"
                 x-cloak
@@ -142,13 +160,11 @@
             </div>
         </div>
 
-        {{-- Scroll horizontal (mobile) uniquement --}}
         <div
             wire:loading.class="opacity-50"
             wire:target="setProject,labelId,search,toggleMine"
             class="snap-x snap-mandatory overflow-x-auto pb-4 transition-opacity sm:snap-none"
         >
-            {{-- Hauteur fixe : ce sont les colonnes qui scrollent, pas la page --}}
             <div class="flex h-[calc(100dvh-17rem)] min-h-96 w-max gap-4 sm:w-full">
                 @foreach ($this::STATUSES as $status => $meta)
                     @php
@@ -165,7 +181,6 @@
                     @endphp
 
                     <div wire:key="col-{{ $status }}" class="h-full w-[85vw] max-w-80 shrink-0 snap-start sm:min-w-72 sm:max-w-none sm:flex-1">
-                        {{-- Zone de dépôt (fond pastel par colonne) --}}
                         <div
                             class="flex h-full flex-col rounded-lg transition-colors {{ $theme['column'] }}"
                             :class="over === '{{ $status }}' && from !== '{{ $status }}' && 'ring-2 ring-blue-400/60'"
@@ -178,7 +193,6 @@
                                 dragging = null; from = null; over = null
                             "
                         >
-                            {{-- En-tête de colonne (fixe) : pastille colorée + compteur --}}
                             <div class="flex shrink-0 items-center gap-2 px-10 py-4">
                                 <span class="inline-flex min-w-0 items-center gap-2 rounded-full px-2.5 py-0.5 text-sm font-medium {{ $theme['pill'] }}">
                                     <span class="size-2 shrink-0 rounded-full {{ $theme['dot'] }}"></span>
@@ -189,7 +203,6 @@
                                 </span>
                             </div>
 
-                            {{-- Liste scrollable --}}
                             <div class="flex min-h-16 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-10 pb-3">
                                 @if ($column['error'])
                                     <flux:callout variant="danger" icon="exclamation-circle" :heading="$column['error']" />
@@ -199,12 +212,10 @@
 
                                 @foreach ($column['tickets'] as $card)
                                     @php
-                                        // Assigné : id renvoyé par l'API ; le nom est retrouvé dans la liste des utilisateurs
                                         $assigneeId   = isset($card['assignee_id']) ? (int) $card['assignee_id'] : null;
                                         $assigneeName = $card['assignee'] ?? ($assigneeId ? ($users[$assigneeId] ?? null) : null);
                                     @endphp
 
-                                    {{-- Carte cliquable (redirige vers le détail) et draggable --}}
                                     <div
                                         wire:key="card-{{ $card['id'] }}"
                                         draggable="true"
@@ -222,7 +233,6 @@
                                         :class="dragging === @js($card['id']) && 'opacity-40'"
                                         class="shrink-0 cursor-pointer space-y-3 rounded-lg bg-white px-3.5 py-3 shadow-[0_1px_3px_rgba(15,15,15,0.08)] ring-1 ring-black/[0.03] transition hover:bg-zinc-50 hover:shadow-[0_2px_6px_rgba(15,15,15,0.10)] focus-visible:outline-2 focus-visible:outline-blue-500 active:cursor-grabbing dark:bg-zinc-800 dark:ring-white/5 dark:hover:bg-zinc-700/70"
                                     >
-                                        {{-- Badges + menu d'assignation --}}
                                         <div class="flex items-center justify-between gap-2">
                                             <div class="flex flex-wrap items-center gap-2">
                                                 @if ($card['label'])
@@ -238,9 +248,7 @@
                                                 @endif
                                             </div>
 
-                                            {{-- .stop : évite de déclencher la navigation de la carte --}}
                                             <div class="flex shrink-0 items-center gap-0.5" @click.stop @keydown.enter.stop @keydown.space.stop draggable="false">
-                                                {{-- Prendre le ticket (se l'assigner) --}}
                                                 @if ($canTake)
                                                     <flux:button
                                                         wire:key="take-{{ $card['id'] }}"
@@ -256,7 +264,6 @@
                                                     />
                                                 @endif
 
-                                                {{-- Assigner à quelqu'un --}}
                                                 <flux:dropdown position="bottom" align="end">
                                                     <flux:button
                                                         size="xs"
@@ -287,7 +294,6 @@
                                             </div>
                                         </div>
 
-                                        {{-- Titre + n° de ticket : groupés et alignés à gauche --}}
                                         <div class="space-y-1">
                                             <flux:heading class="m-0! break-words text-sm! font-bold! leading-snug!">{{ $card['subject'] ?: __('(sans objet)') }}</flux:heading>
 
@@ -302,7 +308,6 @@
                                             @endif
                                         </div>
 
-                                        {{-- Pied de carte : client à gauche, assigné à droite --}}
                                         <div class="flex items-center justify-between gap-2">
                                             <flux:text class="min-w-0 truncate text-xs">{{ $card['client'] }}</flux:text>
 
@@ -318,7 +323,6 @@
                                     </div>
                                 @endforeach
 
-                                {{-- Sentinelle du scroll infini --}}
                                 @if ($hasMore)
                                     <div
                                         wire:key="sentinel-{{ $status }}-{{ count($column['tickets']) }}"
