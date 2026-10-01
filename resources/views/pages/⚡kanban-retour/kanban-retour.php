@@ -11,6 +11,10 @@ new class extends Component
 {
     private const PER_PAGE = 10;
 
+    private const CACHE_PROJECTS_TTL    = 600; // secondes
+    private const CACHE_USERS_TTL       = 600;
+    private const CACHE_USERPROJECT_TTL = 300;
+
     public const STATUSES = [
         'en attente' => ['title' => 'En attente', 'dot' => 'bg-amber-500'],
         'en cours'   => ['title' => 'En cours',   'dot' => 'bg-blue-500'],
@@ -36,6 +40,9 @@ new class extends Component
         'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple',
         'fuchsia', 'pink', 'rose',
     ];
+
+    /** false tant que les données API n'ont pas été chargées (rendu initial = squelettes) */
+    public bool $ready = false;
 
     /** Projets visibles par l'utilisateur connecté */
     public array $projects = [];
@@ -73,20 +80,109 @@ new class extends Component
     /** @var array<string, array{tickets: array, page: int, lastPage: int, total: int, error: ?string}> */
     public array $columns = [];
 
+    /**
+     * Rendu initial : uniquement des lectures de session (aucun appel API).
+     * Le chargement réel se fait dans loadData(), déclenché par wire:init.
+     */
     public function mount(): void
     {
-        $api = app(CosmiaApi::class);
-
         $this->meId = $this->currentUserId();
-        $this->allowedProjectIds = $this->resolveAllowedProjectIds($api);
 
-        try {
-            $projects = $api->get('/project');
-            $projects = $projects['data'] ?? $projects;
-            $projects = array_is_list($projects) ? $projects : [];
-        } catch (\RuntimeException) {
-            $projects = [];
+        // Fail closed : non-admin = aucun projet tant que l'API n'a pas répondu
+        $this->allowedProjectIds = $this->isSuperAdmin() ? null : [];
+
+        if ($this->allowedProjectIds !== null) {
+            $this->projectId = '';
         }
+    }
+
+    /**
+     * Chargement différé (wire:init) :
+     *  - tour 1 : /project, /user et /user/userproject/{id} en parallèle (sauf ce qui est en cache)
+     *  - tour 2 : les 3 colonnes de tickets en parallèle (loadAll)
+     */
+    public function loadData(): void
+    {
+        if ($this->ready) {
+            return;
+        }
+
+        $me         = $this->currentUserId();
+        $superAdmin = $this->isSuperAdmin();
+
+        // Cache d'abord
+        $projects     = Cache::get('cosmia.projects');
+        $users        = Cache::get('cosmia.users');
+        $userProjects = ($superAdmin || $me === null) ? null : Cache::get("cosmia.userproject.{$me}");
+
+        // Ce qui manque est demandé en une seule salve parallèle
+        $requests = [];
+
+        if ($projects === null) {
+            $requests['projects'] = ['/project'];
+        }
+
+        if ($users === null) {
+            $requests['users'] = ['/user'];
+        }
+
+        if (! $superAdmin && $me !== null && $userProjects === null) {
+            $requests['userproject'] = ['/user/userproject/'.$me];
+        }
+
+        $results = $requests === [] ? [] : app(CosmiaApi::class)->pool($requests);
+
+        // Les erreurs ne sont jamais mises en cache
+
+        if (isset($results['projects'])) {
+            if ($results['projects'] instanceof \Throwable) {
+                $projects = [];
+            } else {
+                $list     = $results['projects']['data'] ?? $results['projects'];
+                $projects = array_is_list($list) ? $list : [];
+                Cache::put('cosmia.projects', $projects, self::CACHE_PROJECTS_TTL);
+            }
+        }
+
+        if (isset($results['users'])) {
+            if ($results['users'] instanceof \Throwable) {
+                $users = []; // menus vides, le reste du board fonctionne
+            } else {
+                $users = $this->normalizeUsers($results['users']);
+                Cache::put('cosmia.users', $users, self::CACHE_USERS_TTL);
+            }
+        }
+
+        if (! $superAdmin) {
+            if ($me === null) {
+                $this->projectsError = __('Session invalide, reconnecte-toi.');
+                $userProjects = [];
+            } elseif (isset($results['userproject'])) {
+                if ($results['userproject'] instanceof \Throwable) {
+                    $this->projectsError = $results['userproject']->getMessage();
+                    logger()->warning('kanban userproject failed', [
+                        'user'  => $me,
+                        'error' => $results['userproject']->getMessage(),
+                    ]);
+                    $userProjects = []; // fail closed
+                } else {
+                    $userProjects = collect($results['userproject']['result'] ?? [])
+                        ->pluck('project_id')
+                        ->map(fn ($id) => (string) $id)
+                        ->unique()
+                        ->values()
+                        ->all();
+
+                    Cache::put("cosmia.userproject.{$me}", $userProjects, self::CACHE_USERPROJECT_TTL);
+                }
+            }
+        }
+
+        $projects ??= [];
+        $users    ??= [];
+
+        // null = super_admin ; sinon ids autorisés
+        $this->allowedProjectIds = $superAdmin ? null : ($userProjects ?? []);
 
         // Non-admin : uniquement les projets auxquels il est affecté
         $this->projects = $this->allowedProjectIds === null
@@ -101,7 +197,9 @@ new class extends Component
             $this->projectId = isset($this->projects[0]) ? (string) $this->projects[0]['id'] : '';
         }
 
-        $this->loadUsers();
+        $this->applyUsers($users);
+
+        $this->ready = true;
         $this->loadAll();
     }
 
@@ -112,6 +210,10 @@ new class extends Component
 
     public function setProject(string $id): void
     {
+        if (! $this->ready) {
+            return;
+        }
+
         // Non-admin : uniquement ses projets, jamais « all »
         if ($this->allowedProjectIds !== null && ! in_array($id, $this->allowedProjectIds, true)) {
             return;
@@ -133,6 +235,10 @@ new class extends Component
 
     public function toggleMine(): void
     {
+        if (! $this->ready) {
+            return;
+        }
+
         $this->mine = ! $this->mine;
         $this->loadAll();
     }
@@ -321,108 +427,92 @@ new class extends Component
     }
 
     /**
-     * null = super_admin (tous les projets).
-     * Sinon les ids de projets de l'utilisateur. En cas d'erreur : aucun projet (fail closed),
-     * avec le message dans $projectsError.
-     *
-     * @return array<int, string>|null
+     * Réponse brute de /user => liste triée [id, name, treating] (format mis en cache).
      */
-    private function resolveAllowedProjectIds(CosmiaApi $api): ?array
+    private function normalizeUsers(array $raw): array
     {
-        if ($this->isSuperAdmin()) {
-            return null;
-        }
-
-        $me = $this->currentUserId();
-
-        if ($me === null) {
-            $this->projectsError = __('Session invalide, reconnecte-toi.');
-
-            return [];
-        }
-
-        try {
-            return $this->fetchUserProjectIds($api, $me);
-        } catch (\RuntimeException $e) {
-            $this->projectsError = $e->getMessage();
-            logger()->warning('kanban userproject failed', ['user' => $me, 'error' => $e->getMessage()]);
-
-            return [];
-        }
-    }
-
-    /**
-     * GET /user/userproject/{id} → result[].project_id
-     *
-     * Utilise le token de l'utilisateur : nécessite que n8n autorise un utilisateur
-     * à lire ses propres affectations. Avec un compte de service, remplacez par :
-     *     $response = $api->serviceGet('/user/userproject/'.$userId);
-     *
-     * @return array<int, string>
-     * @throws \RuntimeException
-     */
-    private function fetchUserProjectIds(CosmiaApi $api, int $userId): array
-    {
-        $response = $api->get('/user/userproject/'.$userId);
-
-        return collect($response['result'] ?? [])
-            ->pluck('project_id')
-            ->map(fn ($id) => (string) $id)
-            ->unique()
+        return collect($raw)
+            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->map(fn ($u) => [
+                'id'       => (int) $u['id'],
+                'name'     => $u['name'],
+                'treating' => (int) ($u['treating'] ?? 0),
+            ])
             ->values()
             ->all();
     }
 
-    private function loadUsers(): void
+    private function applyUsers(array $all): void
     {
-        $api = app(CosmiaApi::class);
-
-        try {
-            $all = Cache::remember('cosmia.users', now()->addMinutes(10), function () use ($api) {
-                return collect($api->get('/user'))
-                    ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
-                    ->map(fn ($u) => [
-                        'id'       => (int) $u['id'],
-                        'name'     => $u['name'],
-                        'treating' => (int) ($u['treating'] ?? 0),
-                    ])
-                    ->values()
-                    ->all();
-            });
-        } catch (\RuntimeException) {
-            $all = [];
-        }
-
         $all = collect($all);
 
         $this->userNames = $all->pluck('name', 'id')->all();
         $this->users     = $all->where('treating', 1)->pluck('name', 'id')->all();
     }
 
-    private function loadAll(): void
+    /** Non-admin : jamais de requête hors de ses projets. */
+    private function isProjectAllowed(): bool
     {
-        foreach (array_keys(self::STATUSES) as $status) {
-            $this->fetchColumn($status, 1);
-        }
+        return $this->allowedProjectIds === null
+            || in_array((string) $this->projectId, $this->allowedProjectIds, true);
     }
 
-    private function fetchColumn(string $status, int $page): void
+    private function emptyColumn(): array
     {
-        // Non-admin : jamais de requête hors de ses projets
-        if (
-            $this->allowedProjectIds !== null
-            && ! in_array((string) $this->projectId, $this->allowedProjectIds, true)
-        ) {
-            $this->columns[$status] = [
-                'tickets' => [], 'page' => 1, 'lastPage' => 1, 'total' => 0, 'error' => null,
-            ];
+        return ['tickets' => [], 'page' => 1, 'lastPage' => 1, 'total' => 0, 'error' => null];
+    }
+
+    /** Charge la 1re page des 3 colonnes en parallèle (un seul tour réseau). */
+    private function loadAll(): void
+    {
+        if (! $this->ready) {
+            return;
+        }
+
+        $statuses = array_keys(self::STATUSES);
+
+        if (! $this->isProjectAllowed()) {
+            foreach ($statuses as $status) {
+                $this->columns[$status] = $this->emptyColumn();
+            }
 
             return;
         }
 
-        $previous = $this->columns[$status]['tickets'] ?? [];
+        $requests = [];
 
-        $query = array_filter([
+        foreach ($statuses as $status) {
+            $requests[$status] = ['/ticket', $this->queryFor($status, 1)];
+        }
+
+        $results = app(CosmiaApi::class)->pool($requests);
+
+        foreach ($statuses as $status) {
+            $this->hydrateColumn($status, 1, $results[$status]);
+        }
+    }
+
+    /** Page suivante d'une colonne (scroll infini). */
+    private function fetchColumn(string $status, int $page): void
+    {
+        if (! $this->isProjectAllowed()) {
+            $this->columns[$status] = $this->emptyColumn();
+
+            return;
+        }
+
+        try {
+            $result = app(CosmiaApi::class)->get('/ticket', $this->queryFor($status, $page));
+        } catch (\RuntimeException $e) {
+            $result = $e;
+        }
+
+        $this->hydrateColumn($status, $page, $result);
+    }
+
+    private function queryFor(string $status, int $page): array
+    {
+        return array_filter([
             'page'       => $page,
             'per_page'   => self::PER_PAGE,
             'status'     => $status,
@@ -431,28 +521,34 @@ new class extends Component
             'search'     => trim($this->search),
             'user_id'    => $this->mine ? $this->currentUserId() : null,
         ], fn ($value) => $value !== null && $value !== '');
+    }
 
-        try {
-            $data = app(CosmiaApi::class)->get('/ticket', $query);
+    /** Range dans $this->columns le résultat d'un appel /ticket (réponse décodée ou exception). */
+    private function hydrateColumn(string $status, int $page, array|\Throwable $result): void
+    {
+        $previous = $this->columns[$status]['tickets'] ?? [];
 
-            $tickets = collect($data['data'] ?? [])->map(fn ($t) => $this->present($t))->all();
-
-            $this->columns[$status] = [
-                'tickets'  => $page === 1 ? $tickets : array_merge($previous, $tickets),
-                'page'     => (int) ($data['current_page'] ?? $page),
-                'lastPage' => (int) ($data['total_page'] ?? 1),
-                'total'    => (int) ($data['total_item'] ?? count($tickets)),
-                'error'    => null,
-            ];
-        } catch (\RuntimeException $e) {
+        if ($result instanceof \Throwable) {
             $this->columns[$status] = [
                 'tickets'  => $page === 1 ? [] : $previous,
                 'page'     => $page === 1 ? 1 : $page - 1,
                 'lastPage' => 1,
                 'total'    => count($page === 1 ? [] : $previous),
-                'error'    => $e->getMessage(),
+                'error'    => $result->getMessage(),
             ];
+
+            return;
         }
+
+        $tickets = collect($result['data'] ?? [])->map(fn ($t) => $this->present($t))->all();
+
+        $this->columns[$status] = [
+            'tickets'  => $page === 1 ? $tickets : array_merge($previous, $tickets),
+            'page'     => (int) ($result['current_page'] ?? $page),
+            'lastPage' => (int) ($result['total_page'] ?? 1),
+            'total'    => (int) ($result['total_item'] ?? count($tickets)),
+            'error'    => null,
+        ];
     }
 
     private function present(array $t): array

@@ -10,6 +10,9 @@ new class extends Component
 {
     private const PER_PAGE = 10;
 
+    private const CACHE_PROJECTS_TTL = 600; // secondes
+    private const CACHE_USERS_TTL    = 600;
+
     public const STATUSES = [
         'en attente' => ['title' => 'En attente', 'dot' => 'bg-amber-500'],
         'en cours'   => ['title' => 'En cours',   'dot' => 'bg-blue-500'],
@@ -36,6 +39,9 @@ new class extends Component
         'fuchsia', 'pink', 'rose',
     ];
 
+    /** false tant que les données API n'ont pas été chargées (rendu initial = squelettes) */
+    public bool $ready = false;
+
     public array $projects = [];
 
     /** @var array<int, string> [id => nom] des utilisateurs assignables (treating = 1) */
@@ -59,16 +65,68 @@ new class extends Component
     /** @var array<string, array{tickets: array, page: int, lastPage: int, total: int, error: ?string}> */
     public array $columns = [];
 
+    /**
+     * Rendu initial : aucune requête API (seulement la session).
+     * Le chargement réel se fait dans loadData(), déclenché par wire:init.
+     */
     public function mount(): void
     {
-        try {
-            $this->projects = app(CosmiaApi::class)->get('/project');
-        } catch (\RuntimeException) {
-            $this->projects = [];
+        $this->meId = $this->currentUserId();
+    }
+
+    /**
+     * Chargement différé (wire:init) :
+     *  - tour 1 : /project et /user en parallèle (sauf ce qui est en cache)
+     *  - tour 2 : les 3 colonnes de tickets en parallèle (loadAll)
+     */
+    public function loadData(): void
+    {
+        if ($this->ready) {
+            return;
         }
 
-        $this->meId = $this->currentUserId();
-        $this->loadUsers();
+        // Cache d'abord
+        $projects = Cache::get('cosmia.projects');
+        $users    = Cache::get('cosmia.users');
+
+        // Ce qui manque est demandé en une seule salve parallèle
+        $requests = [];
+
+        if ($projects === null) {
+            $requests['projects'] = ['/project'];
+        }
+
+        if ($users === null) {
+            $requests['users'] = ['/user'];
+        }
+
+        $results = $requests === [] ? [] : app(CosmiaApi::class)->pool($requests);
+
+        // Les erreurs ne sont jamais mises en cache
+
+        if (isset($results['projects'])) {
+            if ($results['projects'] instanceof \Throwable) {
+                $projects = [];
+            } else {
+                $list     = $results['projects']['data'] ?? $results['projects'];
+                $projects = array_is_list($list) ? $list : [];
+                Cache::put('cosmia.projects', $projects, self::CACHE_PROJECTS_TTL);
+            }
+        }
+
+        if (isset($results['users'])) {
+            if ($results['users'] instanceof \Throwable) {
+                $users = []; // menus vides, le reste du board fonctionne
+            } else {
+                $users = $this->normalizeUsers($results['users']);
+                Cache::put('cosmia.users', $users, self::CACHE_USERS_TTL);
+            }
+        }
+
+        $this->projects = $projects ?? [];
+        $this->applyUsers($users ?? []);
+
+        $this->ready = true;
         $this->loadAll();
     }
 
@@ -79,6 +137,10 @@ new class extends Component
 
     public function setProject(string $id): void
     {
+        if (! $this->ready) {
+            return;
+        }
+
         $this->projectId = $id;
         $this->loadAll();
     }
@@ -95,6 +157,10 @@ new class extends Component
 
     public function toggleMine(): void
     {
+        if (! $this->ready) {
+            return;
+        }
+
         $this->mine = ! $this->mine;
         $this->loadAll();
     }
@@ -275,26 +341,24 @@ new class extends Component
         return isset($data['id']) ? (int) $data['id'] : null;
     }
 
-    private function loadUsers(): void
+    /**
+     * Réponse brute de /user => liste triée [id, name, treating] (format mis en cache).
+     */
+    private function normalizeUsers(array $raw): array
     {
-        $api = app(CosmiaApi::class);
+        return collect($raw)
+            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->map(fn ($u) => [
+                'id'       => (int) $u['id'],
+                'name'     => $u['name'],
+                'treating' => (int) ($u['treating'] ?? 0),
+            ])
+            ->values()
+            ->all();
+    }
 
-        try {
-            $all = Cache::remember('cosmia.users', now()->addMinutes(10), function () use ($api) {
-                return collect($api->get('/user'))
-                    ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
-                    ->map(fn ($u) => [
-                        'id'       => (int) $u['id'],
-                        'name'     => $u['name'],
-                        'treating' => (int) ($u['treating'] ?? 0),
-                    ])
-                    ->values()
-                    ->all();
-            });
-        } catch (\RuntimeException) {
-            $all = []; // menus vides, le reste du board fonctionne
-        }
-
+    private function applyUsers(array $all): void
+    {
         $all = collect($all);
 
         // Tous les noms (affichage de l'assigné) / seulement treating = 1 (prendre, assigner)
@@ -302,19 +366,43 @@ new class extends Component
         $this->users     = $all->where('treating', 1)->pluck('name', 'id')->all();
     }
 
+    /** Charge la 1re page des 3 colonnes en parallèle (un seul tour réseau). */
     private function loadAll(): void
     {
-        foreach (array_keys(self::STATUSES) as $status) {
-            $this->fetchColumn($status, 1);
+        if (! $this->ready) {
+            return;
+        }
+
+        $statuses = array_keys(self::STATUSES);
+        $requests = [];
+
+        foreach ($statuses as $status) {
+            $requests[$status] = ['/ticket', $this->queryFor($status, 1)];
+        }
+
+        $results = app(CosmiaApi::class)->pool($requests);
+
+        foreach ($statuses as $status) {
+            $this->hydrateColumn($status, 1, $results[$status]);
         }
     }
 
+    /** Page suivante d'une colonne (scroll infini). */
     private function fetchColumn(string $status, int $page): void
     {
-        $previous = $this->columns[$status]['tickets'] ?? [];
+        try {
+            $result = app(CosmiaApi::class)->get('/ticket', $this->queryFor($status, $page));
+        } catch (\RuntimeException $e) {
+            $result = $e;
+        }
 
+        $this->hydrateColumn($status, $page, $result);
+    }
+
+    private function queryFor(string $status, int $page): array
+    {
         // ⚠️ Noms des paramètres à confirmer côté API (page, per_page, status, project_id, label_id, search)
-        $query = array_filter([
+        return array_filter([
             'page'       => $page,
             'per_page'   => self::PER_PAGE,
             'status'     => $status,
@@ -323,28 +411,34 @@ new class extends Component
             'search'     => trim($this->search),
             'user_id'    => $this->mine ? $this->currentUserId() : null,
         ], fn ($value) => $value !== null && $value !== '');
+    }
 
-        try {
-            $data = app(CosmiaApi::class)->get('/ticket', $query);
+    /** Range dans $this->columns le résultat d'un appel /ticket (réponse décodée ou exception). */
+    private function hydrateColumn(string $status, int $page, array|\Throwable $result): void
+    {
+        $previous = $this->columns[$status]['tickets'] ?? [];
 
-            $tickets = collect($data['data'] ?? [])->map(fn ($t) => $this->present($t))->all();
-
-            $this->columns[$status] = [
-                'tickets'  => $page === 1 ? $tickets : array_merge($previous, $tickets),
-                'page'     => (int) ($data['current_page'] ?? $page),
-                'lastPage' => (int) ($data['total_page'] ?? 1),
-                'total'    => (int) ($data['total_item'] ?? count($tickets)),
-                'error'    => null,
-            ];
-        } catch (\RuntimeException $e) {
+        if ($result instanceof \Throwable) {
             $this->columns[$status] = [
                 'tickets'  => $page === 1 ? [] : $previous,
                 'page'     => $page === 1 ? 1 : $page - 1,
                 'lastPage' => 1,
                 'total'    => count($page === 1 ? [] : $previous),
-                'error'    => $e->getMessage(),
+                'error'    => $result->getMessage(),
             ];
+
+            return;
         }
+
+        $tickets = collect($result['data'] ?? [])->map(fn ($t) => $this->present($t))->all();
+
+        $this->columns[$status] = [
+            'tickets'  => $page === 1 ? $tickets : array_merge($previous, $tickets),
+            'page'     => (int) ($result['current_page'] ?? $page),
+            'lastPage' => (int) ($result['total_page'] ?? 1),
+            'total'    => (int) ($result['total_item'] ?? count($tickets)),
+            'error'    => null,
+        ];
     }
 
     private function present(array $t): array

@@ -87,6 +87,65 @@ class CosmiaApi
     }
 
     /**
+     * Lance plusieurs GET (avec query) en parallèle, en conservant le message d'erreur de chaque appel.
+     *
+     * @param  array<string|int, array{0: string, 1?: array}>  $requests  [clé => [chemin, query]]
+     * @return array<string|int, array|RuntimeException>  [clé => réponse JSON, ou RuntimeException (non levée)]
+     */
+    public function pool(array $requests): array
+    {
+        if (empty($requests)) {
+            return [];
+        }
+
+        $token = session('cosmia_token');
+
+        $responses = Http::pool(function (Pool $pool) use ($requests, $token) {
+            $calls = [];
+
+            foreach ($requests as $key => $request) {
+                $pending = $pool->as((string) $key)
+                    ->baseUrl(config('services.cosmia.url'))
+                    ->withHeaders(['x-secret-key' => config('services.cosmia.secret')])
+                    ->acceptJson()
+                    ->asJson()
+                    ->timeout(15);
+
+                if ($token) {
+                    $pending = $pending->withToken($token);
+                }
+
+                $calls[] = $pending->get($request[0], $request[1] ?? []);
+            }
+
+            return $calls;
+        });
+
+        $results = [];
+
+        foreach ($requests as $key => $_) {
+            $response = $responses[(string) $key] ?? null;
+
+            if ($response instanceof Response) {
+                $results[$key] = $response->failed()
+                    ? new RuntimeException(
+                        $response->json('error')
+                        ?? $response->json('message')
+                        ?? __("Erreur de l'API (:status).", ['status' => $response->status()])
+                    )
+                    : ($response->json() ?? []);
+
+                continue;
+            }
+
+            // ConnectionException (ou aucune réponse)
+            $results[$key] = new RuntimeException(__('Service indisponible, réessaie dans un instant.'));
+        }
+
+        return $results;
+    }
+
+    /**
      * @throws RuntimeException Le message est directement affichable à l'utilisateur.
      */
     private function send(Closure $call, bool $withUserToken = true): array

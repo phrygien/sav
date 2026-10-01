@@ -1,4 +1,4 @@
-<div>
+<div wire:init="loadData">
     @php
         $segments = ['all' => 'Tous'] + collect($projects)->mapWithKeys(fn ($p) => [$p['id'] => $p['name']])->all();
 
@@ -32,7 +32,7 @@
 
         $users = $this->users;
         $meId  = $this->meId;
-        $canTake = $meId !== null && isset($users[$meId]); // seuls les utilisateurs treating = 1
+        $canTake = $ready && $meId !== null && isset($users[$meId]); // seuls les utilisateurs treating = 1
     @endphp
 
     {{-- En-tête : empilé sur mobile, sur une ligne à partir de lg --}}
@@ -42,15 +42,24 @@
 
             <flux:separator vertical class="my-2" />
 
-            <flux:avatar.group class="**:ring-white dark:**:ring-zinc-800">
-                @foreach (collect($users)->take(3) as $uid => $uname)
-                    <flux:avatar size="sm" tooltip :name="$uname" :color="$this->colorForName($uname)" />
-                @endforeach
+            @if ($ready)
+                <flux:avatar.group class="**:ring-white dark:**:ring-zinc-800">
+                    @foreach (collect($users)->take(3) as $uid => $uname)
+                        <flux:avatar size="sm" tooltip :name="$uname" :color="$this->colorForName($uname)" />
+                    @endforeach
 
-                @if (count($users) > 3)
-                    <flux:avatar size="sm">{{ count($users) - 3 }}+</flux:avatar>
-                @endif
-            </flux:avatar.group>
+                    @if (count($users) > 3)
+                        <flux:avatar size="sm">{{ count($users) - 3 }}+</flux:avatar>
+                    @endif
+                </flux:avatar.group>
+            @else
+                {{-- Squelette avatars --}}
+                <div class="flex -space-x-2 animate-pulse">
+                    <div class="size-8 rounded-full bg-zinc-200 ring-2 ring-white dark:bg-zinc-700 dark:ring-zinc-800"></div>
+                    <div class="size-8 rounded-full bg-zinc-200 ring-2 ring-white dark:bg-zinc-700 dark:ring-zinc-800"></div>
+                    <div class="size-8 rounded-full bg-zinc-200 ring-2 ring-white dark:bg-zinc-700 dark:ring-zinc-800"></div>
+                </div>
+            @endif
 
             <flux:button
                 wire:click="toggleMine"
@@ -58,6 +67,7 @@
                 icon="user"
                 size="sm"
                 class="ml-5"
+                :disabled="! $ready"
             >
                 {{ __('Ticket qui m’est assigné') }}
             </flux:button>
@@ -83,21 +93,25 @@
             </div>
 
             {{-- Segmenté par projet --}}
-            <div class="flex w-full items-center gap-1 overflow-x-auto rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800 sm:w-auto">
-                @foreach ($segments as $id => $label)
-                    <button
-                        type="button"
-                        wire:key="seg-{{ $id }}"
-                        wire:click="setProject('{{ $id }}')"
-                        class="flex-1 whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-colors sm:flex-none
-                            {{ (string) $projectId === (string) $id
-                                ? 'bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-white'
-                                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
-                    >
-                        {{ $label }}
-                    </button>
-                @endforeach
-            </div>
+            @if ($ready)
+                <div class="flex w-full items-center gap-1 overflow-x-auto rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800 sm:w-auto">
+                    @foreach ($segments as $id => $label)
+                        <button
+                            type="button"
+                            wire:key="seg-{{ $id }}"
+                            wire:click="setProject('{{ $id }}')"
+                            class="flex-1 whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-colors sm:flex-none
+                                {{ (string) $projectId === (string) $id
+                                    ? 'bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-white'
+                                    : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
+                        >
+                            {{ $label }}
+                        </button>
+                    @endforeach
+                </div>
+            @else
+                <div class="h-9 w-full animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800 sm:w-56"></div>
+            @endif
         </div>
     </div>
 
@@ -184,150 +198,176 @@
                                     <span class="size-2 shrink-0 rounded-full {{ $theme['dot'] }}"></span>
                                     <span class="truncate">{{ $meta['title'] }}</span>
                                 </span>
-                                <span class="text-sm font-medium {{ $theme['count'] }}">
-                                    {{ number_format($column['total'], 0, ',', ' ') }}
-                                </span>
+
+                                @if ($ready)
+                                    <span class="text-sm font-medium {{ $theme['count'] }}">
+                                        {{ number_format($column['total'], 0, ',', ' ') }}
+                                    </span>
+                                @else
+                                    <span class="h-4 w-6 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700"></span>
+                                @endif
                             </div>
 
                             {{-- Liste scrollable --}}
                             <div class="flex min-h-16 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-10 pb-3">
-                                @if ($column['error'])
-                                    <flux:callout variant="danger" icon="exclamation-circle" :heading="$column['error']" />
-                                @elseif (empty($column['tickets']))
-                                    <flux:text class="py-6 text-center">{{ __('Aucun ticket') }}</flux:text>
-                                @endif
-
-                                @foreach ($column['tickets'] as $card)
-                                    @php
-                                        // Assigné : id renvoyé par l'API ; le nom est retrouvé dans la liste des utilisateurs
-                                        $assigneeId   = isset($card['assignee_id']) ? (int) $card['assignee_id'] : null;
-                                        $assigneeName = $card['assignee'] ?? ($assigneeId ? ($users[$assigneeId] ?? null) : null);
-                                    @endphp
-
-                                    {{-- Carte cliquable (redirige vers le détail) et draggable --}}
-                                    <div
-                                        wire:key="card-{{ $card['id'] }}"
-                                        draggable="true"
-                                        role="link"
-                                        tabindex="0"
-                                        @click="Livewire.navigate('{{ route('kanban.details', ['ticket' => $card['id']]) }}')"
-                                        @keydown.enter="Livewire.navigate('{{ route('kanban.details', ['ticket' => $card['id']]) }}')"
-                                        @dragstart="
-                                            dragging = @js($card['id']);
-                                            from = '{{ $status }}';
-                                            $event.dataTransfer.effectAllowed = 'move';
-                                            $event.dataTransfer.setData('text/plain', String(dragging));
-                                        "
-                                        @dragend="dragging = null; from = null; over = null"
-                                        :class="dragging === @js($card['id']) && 'opacity-40'"
-                                        class="shrink-0 cursor-pointer space-y-3 rounded-lg bg-white px-3.5 py-3 shadow-[0_1px_3px_rgba(15,15,15,0.08)] ring-1 ring-black/[0.03] transition hover:bg-zinc-50 hover:shadow-[0_2px_6px_rgba(15,15,15,0.10)] focus-visible:outline-2 focus-visible:outline-blue-500 active:cursor-grabbing dark:bg-zinc-800 dark:ring-white/5 dark:hover:bg-zinc-700/70"
-                                    >
-                                        {{-- Badges + menu d'assignation --}}
-                                        <div class="flex items-center justify-between gap-2">
-                                            <div class="flex flex-wrap items-center gap-2">
-                                                @if ($card['label'])
-                                                    <flux:badge color="blue" size="sm">{{ $card['label'] }}</flux:badge>
-                                                @endif
-
-                                                @if ($card['attention'])
-                                                    <flux:badge color="amber" size="sm">{{ __('Attention') }}</flux:badge>
-                                                @endif
-
-                                                @if ($projectId === 'all' && $card['project'])
-                                                    <flux:badge color="zinc" size="sm">{{ $card['project'] }}</flux:badge>
-                                                @endif
+                                @if (! $ready)
+                                    {{-- Squelettes de cartes pendant le chargement initial (4 par statut) --}}
+                                    @foreach (range(1, 4) as $i)
+                                        <div wire:key="skeleton-{{ $status }}-{{ $i }}" class="shrink-0 animate-pulse space-y-3 rounded-lg bg-white px-3.5 py-3 shadow-[0_1px_3px_rgba(15,15,15,0.08)] ring-1 ring-black/[0.03] dark:bg-zinc-800 dark:ring-white/5">
+                                            <div class="flex items-center justify-between gap-2">
+                                                <div class="h-5 w-24 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                                                <div class="h-5 w-10 rounded bg-zinc-200 dark:bg-zinc-700"></div>
                                             </div>
-
-                                            {{-- .stop : évite de déclencher la navigation de la carte --}}
-                                            <div class="flex shrink-0 items-center gap-0.5" @click.stop @keydown.enter.stop @keydown.space.stop draggable="false">
-                                                {{-- Prendre le ticket (se l'assigner) --}}
-                                                @if ($canTake)
-                                                    <flux:button
-                                                        wire:key="take-{{ $card['id'] }}"
-                                                        wire:click="takeTicket('{{ $card['id'] }}')"
-                                                        size="xs"
-                                                        variant="ghost"
-                                                        :icon="$meId !== null && $assigneeId === $meId ? 'check-circle' : 'hand-raised'"
-                                                        inset
-                                                        :disabled="$assigneeId === $meId"
-                                                        tooltip="{{ $meId !== null && $assigneeId === $meId ? __('Ticket déjà pris par moi') : __('Prendre le ticket') }}"
-                                                        aria-label="{{ __('Prendre le ticket') }}"
-                                                        class="text-zinc-400! hover:text-zinc-600! dark:text-zinc-500! dark:hover:text-zinc-300!"
-                                                    />
-                                                @endif
-
-                                                {{-- Assigner à quelqu'un --}}
-                                                <flux:dropdown position="bottom" align="end">
-                                                    <flux:button
-                                                        size="xs"
-                                                        variant="ghost"
-                                                        icon="user-plus"
-                                                        inset
-                                                        tooltip="{{ __('Assigner') }}"
-                                                        aria-label="{{ __('Assigner le ticket') }}"
-                                                        class="text-zinc-400! hover:text-zinc-600! dark:text-zinc-500! dark:hover:text-zinc-300!"
-                                                    />
-
-                                                    <flux:menu>
-                                                        <flux:menu.group heading="{{ __('Assigner à') }}">
-                                                            @forelse ($users as $userId => $userName)
-                                                                <flux:menu.item
-                                                                    wire:key="assign-{{ $card['id'] }}-{{ $userId }}"
-                                                                    wire:click="assignTicket('{{ $card['id'] }}', {{ $userId }})"
-                                                                    :icon="$assigneeId === $userId ? 'check' : null"
-                                                                >
-                                                                    {{ $userName }}
-                                                                </flux:menu.item>
-                                                            @empty
-                                                                <flux:menu.item disabled>{{ __('Aucun utilisateur disponible') }}</flux:menu.item>
-                                                            @endforelse
-                                                        </flux:menu.group>
-                                                    </flux:menu>
-                                                </flux:dropdown>
+                                            <div class="space-y-2">
+                                                <div class="h-4 w-4/5 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                                                <div class="h-3 w-1/2 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                                                <div class="h-3 w-2/3 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                                            </div>
+                                            <div class="flex items-center justify-between gap-2">
+                                                <div class="h-3 w-1/3 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                                                <div class="size-6 rounded-full bg-zinc-200 dark:bg-zinc-700"></div>
                                             </div>
                                         </div>
+                                    @endforeach
+                                @else
+                                    @if ($column['error'])
+                                        <flux:callout variant="danger" icon="exclamation-circle" :heading="$column['error']" />
+                                    @elseif (empty($column['tickets']))
+                                        <flux:text class="py-6 text-center">{{ __('Aucun ticket') }}</flux:text>
+                                    @endif
 
-                                        {{-- Titre + n° de ticket : groupés et alignés à gauche --}}
-                                        <div class="space-y-1">
-                                            <flux:heading class="m-0! break-words text-sm! font-bold! leading-snug!">{{ $card['subject'] ?: __('(sans objet)') }}</flux:heading>
+                                    @foreach ($column['tickets'] as $card)
+                                        @php
+                                            // Assigné : id renvoyé par l'API ; le nom est retrouvé dans la liste des utilisateurs
+                                            $assigneeId   = isset($card['assignee_id']) ? (int) $card['assignee_id'] : null;
+                                            $assigneeName = $card['assignee'] ?? ($assigneeId ? ($users[$assigneeId] ?? null) : null);
+                                        @endphp
 
-                                            <flux:text class="m-0! text-xs leading-snug!">
-                                                {{ $card['num'] }}@if ($card['order']) • {{ __('Cmd') }} {{ $card['order'] }}@endif
-                                            </flux:text>
+                                        {{-- Carte cliquable (redirige vers le détail) et draggable --}}
+                                        <div
+                                            wire:key="card-{{ $card['id'] }}"
+                                            draggable="true"
+                                            role="link"
+                                            tabindex="0"
+                                            @click="Livewire.navigate('{{ route('kanban.details', ['ticket' => $card['id']]) }}')"
+                                            @keydown.enter="Livewire.navigate('{{ route('kanban.details', ['ticket' => $card['id']]) }}')"
+                                            @dragstart="
+                                                dragging = @js($card['id']);
+                                                from = '{{ $status }}';
+                                                $event.dataTransfer.effectAllowed = 'move';
+                                                $event.dataTransfer.setData('text/plain', String(dragging));
+                                            "
+                                            @dragend="dragging = null; from = null; over = null"
+                                            :class="dragging === @js($card['id']) && 'opacity-40'"
+                                            class="shrink-0 cursor-pointer space-y-3 rounded-lg bg-white px-3.5 py-3 shadow-[0_1px_3px_rgba(15,15,15,0.08)] ring-1 ring-black/[0.03] transition hover:bg-zinc-50 hover:shadow-[0_2px_6px_rgba(15,15,15,0.10)] focus-visible:outline-2 focus-visible:outline-blue-500 active:cursor-grabbing dark:bg-zinc-800 dark:ring-white/5 dark:hover:bg-zinc-700/70"
+                                        >
+                                            {{-- Badges + menu d'assignation --}}
+                                            <div class="flex items-center justify-between gap-2">
+                                                <div class="flex flex-wrap items-center gap-2">
+                                                    @if ($card['label'])
+                                                        <flux:badge color="blue" size="sm">{{ $card['label'] }}</flux:badge>
+                                                    @endif
 
-                                            @if ($card['date'])
-                                                <flux:text class="m-0! flex items-center gap-1 text-xs leading-snug!">
-                                                    créé le <span>{{ $card['date'] }}@if ($card['time']) {{ __('à') }} {{ $card['time'] }}@endif</span>
+                                                    @if ($card['attention'])
+                                                        <flux:badge color="amber" size="sm">{{ __('Attention') }}</flux:badge>
+                                                    @endif
+
+                                                    @if ($projectId === 'all' && $card['project'])
+                                                        <flux:badge color="zinc" size="sm">{{ $card['project'] }}</flux:badge>
+                                                    @endif
+                                                </div>
+
+                                                {{-- .stop : évite de déclencher la navigation de la carte --}}
+                                                <div class="flex shrink-0 items-center gap-0.5" @click.stop @keydown.enter.stop @keydown.space.stop draggable="false">
+                                                    {{-- Prendre le ticket (se l'assigner) --}}
+                                                    @if ($canTake)
+                                                        <flux:button
+                                                            wire:key="take-{{ $card['id'] }}"
+                                                            wire:click="takeTicket('{{ $card['id'] }}')"
+                                                            size="xs"
+                                                            variant="ghost"
+                                                            :icon="$meId !== null && $assigneeId === $meId ? 'check-circle' : 'hand-raised'"
+                                                            inset
+                                                            :disabled="$assigneeId === $meId"
+                                                            tooltip="{{ $meId !== null && $assigneeId === $meId ? __('Ticket déjà pris par moi') : __('Prendre le ticket') }}"
+                                                            aria-label="{{ __('Prendre le ticket') }}"
+                                                            class="text-zinc-400! hover:text-zinc-600! dark:text-zinc-500! dark:hover:text-zinc-300!"
+                                                        />
+                                                    @endif
+
+                                                    {{-- Assigner à quelqu'un --}}
+                                                    <flux:dropdown position="bottom" align="end">
+                                                        <flux:button
+                                                            size="xs"
+                                                            variant="ghost"
+                                                            icon="user-plus"
+                                                            inset
+                                                            tooltip="{{ __('Assigner') }}"
+                                                            aria-label="{{ __('Assigner le ticket') }}"
+                                                            class="text-zinc-400! hover:text-zinc-600! dark:text-zinc-500! dark:hover:text-zinc-300!"
+                                                        />
+
+                                                        <flux:menu>
+                                                            <flux:menu.group heading="{{ __('Assigner à') }}">
+                                                                @forelse ($users as $userId => $userName)
+                                                                    <flux:menu.item
+                                                                        wire:key="assign-{{ $card['id'] }}-{{ $userId }}"
+                                                                        wire:click="assignTicket('{{ $card['id'] }}', {{ $userId }})"
+                                                                        :icon="$assigneeId === $userId ? 'check' : null"
+                                                                    >
+                                                                        {{ $userName }}
+                                                                    </flux:menu.item>
+                                                                @empty
+                                                                    <flux:menu.item disabled>{{ __('Aucun utilisateur disponible') }}</flux:menu.item>
+                                                                @endforelse
+                                                            </flux:menu.group>
+                                                        </flux:menu>
+                                                    </flux:dropdown>
+                                                </div>
+                                            </div>
+
+                                            {{-- Titre + n° de ticket : groupés et alignés à gauche --}}
+                                            <div class="space-y-1">
+                                                <flux:heading class="m-0! break-words text-sm! font-bold! leading-snug!">{{ $card['subject'] ?: __('(sans objet)') }}</flux:heading>
+
+                                                <flux:text class="m-0! text-xs leading-snug!">
+                                                    {{ $card['num'] }}@if ($card['order']) • {{ __('Cmd') }} {{ $card['order'] }}@endif
                                                 </flux:text>
-                                            @endif
+
+                                                @if ($card['date'])
+                                                    <flux:text class="m-0! flex items-center gap-1 text-xs leading-snug!">
+                                                        créé le <span>{{ $card['date'] }}@if ($card['time']) {{ __('à') }} {{ $card['time'] }}@endif</span>
+                                                    </flux:text>
+                                                @endif
+                                            </div>
+
+                                            {{-- Pied de carte : client à gauche, assigné à droite --}}
+                                            <div class="flex items-center justify-between gap-2">
+                                                <flux:text class="min-w-0 truncate text-xs">{{ $card['client'] }}</flux:text>
+
+                                                @if ($assigneeName)
+                                                    <flux:avatar
+                                                        size="xs"
+                                                        tooltip="{{ __('Assigné à :name', ['name' => $assigneeName]) }}"
+                                                        :name="$assigneeName"
+                                                        :color="$this->colorForName($assigneeName)"
+                                                    />
+                                                @endif
+                                            </div>
                                         </div>
+                                    @endforeach
 
-                                        {{-- Pied de carte : client à gauche, assigné à droite --}}
-                                        <div class="flex items-center justify-between gap-2">
-                                            <flux:text class="min-w-0 truncate text-xs">{{ $card['client'] }}</flux:text>
-
-                                            @if ($assigneeName)
-                                                <flux:avatar
-                                                    size="xs"
-                                                    tooltip="{{ __('Assigné à :name', ['name' => $assigneeName]) }}"
-                                                    :name="$assigneeName"
-                                                    :color="$this->colorForName($assigneeName)"
-                                                />
-                                            @endif
+                                    {{-- Sentinelle du scroll infini --}}
+                                    @if ($hasMore)
+                                        <div
+                                            wire:key="sentinel-{{ $status }}-{{ count($column['tickets']) }}"
+                                            x-intersect.margin.200px="$wire.loadMore('{{ $status }}')"
+                                            class="flex shrink-0 items-center justify-center gap-2 py-3 text-xs text-zinc-500 dark:text-zinc-400"
+                                        >
+                                            <flux:icon.loading variant="mini" class="size-4" />
+                                            <span>{{ __('Chargement…') }}</span>
                                         </div>
-                                    </div>
-                                @endforeach
-
-                                {{-- Sentinelle du scroll infini --}}
-                                @if ($hasMore)
-                                    <div
-                                        wire:key="sentinel-{{ $status }}-{{ count($column['tickets']) }}"
-                                        x-intersect.margin.200px="$wire.loadMore('{{ $status }}')"
-                                        class="flex shrink-0 items-center justify-center gap-2 py-3 text-xs text-zinc-500 dark:text-zinc-400"
-                                    >
-                                        <flux:icon.loading variant="mini" class="size-4" />
-                                        <span>{{ __('Chargement…') }}</span>
-                                    </div>
+                                    @endif
                                 @endif
                             </div>
                         </div>
