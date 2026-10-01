@@ -22,23 +22,29 @@
 
             @if (! empty($details['need_attention']))
                 <flux:badge color="amber" size="sm">
-                    <span class="flex items-center gap-1">
-                        <i class="hgi-stroke hgi-alert-02"></i>
-                        <span>{{ __('Attention') }}</span>
-                    </span>
+                <span class="flex items-center gap-1">
+                    <i class="hgi-stroke hgi-alert-02"></i>
+                    <span>{{ __('Attention') }}</span>
+                </span>
                 </flux:badge>
             @endif
         </div>
 
-        <flux:button
-            variant="primary"
-            size="sm"
-            wire:click="updateStatus('{{ $next['next'] }}')"
-            wire:loading.attr="disabled"
-            wire:target="updateStatus"
-        >
-            {{ $next['label'] }}
-        </flux:button>
+        <div class="flex flex-wrap items-center gap-2">
+            <flux:button size="sm">
+                {{ __('Ajouter note') }}
+            </flux:button>
+
+            <flux:button
+                variant="primary"
+                size="sm"
+                wire:click="updateStatus('{{ $next['next'] }}')"
+                wire:loading.attr="disabled"
+                wire:target="updateStatus"
+            >
+                {{ $next['label'] }}
+            </flux:button>
+        </div>
     </div>
 
     <div class="grid gap-6 md:grid-cols-2">
