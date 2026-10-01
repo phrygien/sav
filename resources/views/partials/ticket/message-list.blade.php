@@ -19,7 +19,7 @@
             <div
                 wire:key="msg-{{ $idx }}"
                 wire:click="openMessage({{ $idx }})"
-                class="cursor-pointer space-y-2 rounded-lg bg-white px-3.5 py-3 shadow-[0_1px_3px_rgba(15,15,15,0.08)] transition hover:bg-zinc-50 hover:shadow-[0_2px_6px_rgba(15,15,15,0.10)] dark:bg-zinc-800 dark:hover:bg-zinc-700/70
+                class="cursor-pointer space-y-2 rounded-lg bg-white mt-3 px-3.5 py-3 shadow-[0_1px_3px_rgba(15,15,15,0.08)] transition hover:bg-zinc-50 hover:shadow-[0_2px_6px_rgba(15,15,15,0.10)] dark:bg-zinc-800 dark:hover:bg-zinc-700/70
                     {{ $isSelected
                         ? 'ring-2 ring-blue-400/60 dark:ring-blue-400/50'
                         : 'ring-1 ring-black/[0.03] dark:ring-white/5' }}"

@@ -7,12 +7,14 @@ use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
+use Illuminate\Support\Facades\Log;
 use Livewire\Component;
+use Mews\Purifier\Facades\Purifier;
 
 /**
  * Page détail d'un ticket : /kanban/details?ticket=12423
  *
- * Responsabilités de CE composant : chargement du ticket, onglets, statut, lecture des mails.
+ * Responsabilités de CE composant : chargement du ticket, onglets, statut, note, lecture des mails.
  * - Chatbot            -> <livewire:ticket.chatbot>
  * - Rédaction / envoi  -> <livewire:ticket.compose-drawer>
  * - Formatage de texte -> App\Support\MailText
@@ -52,6 +54,13 @@ new class extends Component
 
     public string $translatedMessage = '';
 
+    // Note du ticket (HTML, édité avec Jodit)
+    public string $note = '';
+
+    /** true si une note existe déjà côté API : addNote() fera alors un PUT au lieu d'un POST */
+    #[Locked]
+    public bool $hasNote = false;
+
     /* ------------------------------------------------------------------ */
     /*  Cycle de vie                                                       */
     /* ------------------------------------------------------------------ */
@@ -75,6 +84,7 @@ new class extends Component
         }
 
         $this->fetchTicketDetails();
+        $this->fetchNote();
         $this->loaded = true;
     }
 
@@ -82,6 +92,7 @@ new class extends Component
     #[On('ticket-updated')]
     public function refresh(): void
     {
+        // La note n'est pas rechargée ici : on n'écrase pas une saisie en cours
         $this->fetchTicketDetails();
     }
 
@@ -182,6 +193,98 @@ new class extends Component
 
         // Les données ont changé : on invalide les propriétés calculées déjà mémorisées
         unset($this->tabs, $this->nextStatus, $this->metas, $this->chatId);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  Note                                                               */
+    /* ------------------------------------------------------------------ */
+
+    /** GET /ticket/getNote/{id} : remplit l'éditeur avec la note existante */
+    private function fetchNote(): void
+    {
+        try {
+            $res = app(CosmiaApi::class)->get("/ticket/getNote/{$this->ticketId}");
+        } catch (\RuntimeException $e) {
+            // Pas de note existante ou API indisponible : non bloquant, mais on garde une trace
+            Log::warning('getNote KO', ['ticket' => $this->ticketId, 'error' => $e->getMessage()]);
+            $this->hasNote = false;
+
+            return;
+        }
+
+        $this->hasNote = ! empty($res['note']['id']);
+
+        $raw = $res['note']['note'] ?? '';
+
+        $this->note = is_string($raw) ? $this->normalizeNote($raw) : '';
+    }
+
+    /** L'API renvoie le champ "note" sous forme de JSON encodé : on en extrait le HTML */
+    private function normalizeNote(string $raw): string
+    {
+        $decoded = json_decode($raw, true);
+
+        if (is_array($decoded)) {
+            // "test_note" : uniquement pour la note de test actuelle, à retirer ensuite
+            return (string) ($decoded['content'] ?? $decoded['test_note'] ?? '');
+        }
+
+        return $raw;
+    }
+
+    /** POST /ticket/addNote (création) ou PUT /ticket/updateNote/{ticket_id} (modification) */
+    public function addNote(): void
+    {
+        $clean = Purifier::clean($this->note);
+
+        if (trim(html_entity_decode(strip_tags($clean))) === '') {
+            $this->addError('note', __('La note est vide.'));
+
+            return;
+        }
+
+        $method = $this->hasNote ? 'PUT' : 'POST';
+
+        try {
+            $res = $this->hasNote
+                ? app(CosmiaApi::class)->put("/ticket/updateNote/{$this->ticketId}", [
+                    'note' => ['content' => $clean],
+                ])
+                : app(CosmiaApi::class)->post('/ticket/addNote', [
+                    'ticket_id' => $this->ticketId,
+                    'note'      => ['content' => $clean],
+                ]);
+        } catch (\RuntimeException $e) {
+            Log::error('addNote KO', ['method' => $method, 'ticket' => $this->ticketId, 'error' => $e->getMessage()]);
+            $this->notify(__("Impossible d'enregistrer la note !"), 'danger');
+
+            return;
+        }
+
+        // Trace temporaire : permet de voir quelle méthode part et ce que l'API répond
+        Log::info('addNote OK', ['method' => $method, 'ticket' => $this->ticketId, 'response' => $res]);
+
+        // DEBUG TEMPORAIRE : à supprimer une fois le problème trouvé
+        $this->notify("DEBUG {$method} → ".json_encode($res, JSON_UNESCAPED_UNICODE));
+
+        // On relit la note côté API : l'éditeur affiche ce qui est réellement enregistré
+        $this->fetchNote();
+
+        // DEBUG TEMPORAIRE
+        Log::info('getNote après save', ['hasNote' => $this->hasNote, 'note' => $this->note]);
+
+        $this->resetErrorBag('note');
+
+        $saved = trim(html_entity_decode(strip_tags($this->note)));
+        $sent  = trim(html_entity_decode(strip_tags($clean)));
+
+        if ($saved !== $sent) {
+            $this->notify(__("L'API n'a pas enregistré la modification."), 'danger');
+
+            return;
+        }
+
+        $this->notify(__('Note enregistrée'));
     }
 
     /* ------------------------------------------------------------------ */

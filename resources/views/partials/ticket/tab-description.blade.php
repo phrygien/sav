@@ -16,22 +16,27 @@
 @endphp
 
 <div class="space-y-6">
+    {{-- Barre d'actions --}}
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex flex-wrap items-center gap-2">
             <flux:badge :color="$status['color']" size="sm">{{ $status['title'] }}</flux:badge>
 
             @if (! empty($details['need_attention']))
                 <flux:badge color="amber" size="sm">
-                <span class="flex items-center gap-1">
-                    <i class="hgi-stroke hgi-alert-02"></i>
-                    <span>{{ __('Attention') }}</span>
-                </span>
+                    <span class="flex items-center gap-1">
+                        <i class="hgi-stroke hgi-alert-02"></i>
+                        <span>{{ __('Attention') }}</span>
+                    </span>
                 </flux:badge>
             @endif
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
-            <flux:button size="sm">
+            {{-- Fait défiler jusqu'à l'éditeur de note --}}
+            <flux:button
+                size="sm"
+                x-on:click="document.getElementById('note-card').scrollIntoView({ behavior: 'smooth', block: 'center' })"
+            >
                 {{ __('Ajouter note') }}
             </flux:button>
 
@@ -47,23 +52,30 @@
         </div>
     </div>
 
-    <div class="grid gap-6 md:grid-cols-2">
-        <div class="rounded-lg border border-zinc-200 dark:border-white/10">
-            <div class="border-b border-zinc-200 px-4 py-4 dark:border-white/10">
-                <flux:heading>{{ __('Infos ticket') }}</flux:heading>
-                <flux:text class="mt-1 text-sm">{{ __('Toutes les informations sur le ticket.') }}</flux:text>
-            </div>
-
-            <dl class="divide-y divide-zinc-200 dark:divide-white/10">
-                @foreach ($fields as $label => $value)
-                    <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
-                        <dt class="text-sm font-medium text-zinc-900 dark:text-white">{{ $label }}</dt>
-                        <dd class="mt-1 break-words text-sm text-zinc-600 sm:col-span-2 sm:mt-0 dark:text-zinc-300">{{ $value ?: '—' }}</dd>
-                    </div>
-                @endforeach
-            </dl>
+    {{-- Description du ticket : pleine largeur, 3 colonnes --}}
+    <div class="w-full rounded-lg border border-zinc-200 dark:border-white/10">
+        <div class="border-b border-zinc-200 px-4 py-4 dark:border-white/10">
+            <flux:heading>{{ __('Infos ticket') }}</flux:heading>
+            <flux:text class="mt-1 text-sm">{{ __('Toutes les informations sur le ticket.') }}</flux:text>
         </div>
 
+        <dl class="grid grid-cols-1 gap-x-6 gap-y-5 p-4 sm:grid-cols-3">
+            @foreach ($fields as $label => $value)
+                <div class="min-w-0">
+                    <dt class="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                        {{ $label }}
+                    </dt>
+                    <dd class="mt-1 break-words text-sm text-zinc-900 dark:text-white">
+                        {{ $value ?: '—' }}
+                    </dd>
+                </div>
+            @endforeach
+        </dl>
+    </div>
+
+    {{-- Cards du bas : Résumé + Note (TinyMCE) --}}
+    <div class="grid gap-6 md:grid-cols-2">
+        {{-- Résumé --}}
         <div class="rounded-lg bg-zinc-50 p-4 sm:p-6 dark:bg-zinc-900">
             <flux:heading>{{ __('Résumé') }}</flux:heading>
 
@@ -77,6 +89,78 @@
                 @else
                     <flux:text>{{ __('Aucun résumé disponible.') }}</flux:text>
                 @endif
+            </div>
+        </div>
+
+        {{-- Note : éditeur Jodit (HTML5, gratuit, MIT) --}}
+        <div
+            id="note-card"
+            wire:ignore
+            x-data="{
+                value: @entangle('note'),
+                editor: null,
+                init() {
+                    const dark = document.documentElement.classList.contains('dark');
+
+                    this.editor = Jodit.make(this.$refs.editor, {
+                        language: 'fr',
+                        theme: dark ? 'dark' : 'default',
+                        height: 340,
+                        placeholder: @js(__('Écrire une note…')),
+                        toolbarAdaptive: true,
+                        toolbarSticky: false,
+                        showCharsCounter: false,
+                        showWordsCounter: false,
+                        showXPathInStatusbar: false,
+                        askBeforePasteHTML: false,
+                        defaultActionOnPaste: 'insert_clear_html',
+                        buttons: [
+                            'bold', 'italic', 'underline', 'strikethrough', '|',
+                            'ul', 'ol', '|',
+                            'paragraph', 'fontsize', 'brush', '|',
+                            'align', 'indent', 'outdent', '|',
+                            'table', 'link', 'hr', '|',
+                            'undo', 'redo', 'eraser', '|',
+                            'source', 'fullsize',
+                        ],
+                    });
+
+                    this.editor.value = this.value ?? '';
+
+                    this.editor.events.on('change', (v) => {
+                        if (v !== this.value) this.value = v;
+                    });
+
+                    // Vide l'éditeur quand Livewire remet $note à ''
+                    this.$watch('value', (v) => {
+                        if ((v ?? '') !== this.editor.value) this.editor.value = v ?? '';
+                    });
+                },
+                destroy() {
+                    this.editor?.destruct();
+                },
+            }"
+        >
+            <flux:heading>{{ __('Note') }}</flux:heading>
+
+            <div class="mt-3">
+                <textarea x-ref="editor"></textarea>
+            </div>
+
+            @error('note')
+            <flux:text class="mt-2 text-sm text-red-500">{{ $message }}</flux:text>
+            @enderror
+
+            <div class="mt-4 flex justify-end">
+                <flux:button
+                    variant="primary"
+                    size="sm"
+                    wire:click="addNote"
+                    wire:loading.attr="disabled"
+                    wire:target="addNote"
+                >
+                    {{ __('Enregistrer la note') }}
+                </flux:button>
             </div>
         </div>
     </div>
