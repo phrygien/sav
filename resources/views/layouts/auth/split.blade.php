@@ -26,12 +26,12 @@
 
             {{-- Date et heure en direct --}}
             <div x-data="{
-                    now: new Date(),
-                    timer: null,
-                    locale: '{{ str_replace('_', '-', app()->getLocale()) }}',
-                    init() { this.timer = setInterval(() => this.now = new Date(), 1000) },
-                    destroy() { clearInterval(this.timer) }
-                 }"
+        now: new Date(),
+        timer: null,
+        locale: 'fr-FR',
+        init() { this.timer = setInterval(() => this.now = new Date(), 1000) },
+        destroy() { clearInterval(this.timer) }
+     }"
                  class="space-y-1">
                 <p class="text-base capitalize text-white"
                    x-text="now.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })"></p>
@@ -40,8 +40,8 @@
             </div>
 
             {{-- Phrase unique SAV & tickets --}}
-            <h2 class="max-w-xl text-4xl font-bold leading-tight text-white">
-                Suivez et résolvez chaque ticket SAV, simplement.
+            <h2 class="max-w-xl text-3xl font-bold leading-tight text-white">
+                Suivez et résolvez chaque ticket SAV
             </h2>
         </div>
     </div>
