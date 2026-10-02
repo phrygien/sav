@@ -32,9 +32,10 @@
             ],
         ];
 
-        $users = $this->users;
-        $meId  = $this->meId;
-        $canTake = $ready && $meId !== null && isset($users[$meId]); // seuls les utilisateurs treating = 1
+        $users     = $this->users;
+        $meId      = $this->meId;
+        $canTake   = $ready && $meId !== null && isset($users[$meId]); // seuls les utilisateurs treating = 1
+        $canAssign = $this->canAssign;                                  // super_admin / admin uniquement
     @endphp
 
     {{-- En-tête --}}
@@ -162,7 +163,7 @@
 
             <div
                 wire:loading.flex
-                wire:target="moveTicket,assignTicket"
+                wire:target="moveTicket,assignTicket,takeTicket"
                 class="items-center gap-2 text-blue-600 dark:text-blue-400"
             >
                 <flux:icon.loading variant="mini" class="size-4" />
@@ -174,7 +175,7 @@
                 x-cloak
                 x-transition.opacity
                 wire:loading.remove
-                wire:target="moveTicket,assignTicket"
+                wire:target="moveTicket,assignTicket,takeTicket"
                 class="flex items-center gap-2 text-green-600 dark:text-green-400"
             >
                 <flux:icon.check-circle variant="mini" class="size-4" />
@@ -295,7 +296,9 @@
                                                     @endif
                                                 </div>
 
+                                                {{-- .stop : évite de déclencher la navigation de la carte --}}
                                                 <div class="flex shrink-0 items-center gap-0.5" @click.stop @keydown.enter.stop @keydown.space.stop draggable="false">
+                                                    {{-- Prendre le ticket : tout utilisateur treating = 1 --}}
                                                     @if ($canTake)
                                                         <flux:button
                                                             wire:key="take-{{ $card['id'] }}"
@@ -311,33 +314,36 @@
                                                         />
                                                     @endif
 
-                                                    <flux:dropdown position="bottom" align="end">
-                                                        <flux:button
-                                                            size="xs"
-                                                            variant="ghost"
-                                                            icon="user-plus"
-                                                            inset
-                                                            tooltip="{{ __('Assigner') }}"
-                                                            aria-label="{{ __('Assigner le ticket') }}"
-                                                            class="text-zinc-400! hover:text-zinc-600! dark:text-zinc-500! dark:hover:text-zinc-300!"
-                                                        />
+                                                    {{-- Assigner à quelqu'un : super_admin / admin uniquement --}}
+                                                    @if ($canAssign)
+                                                        <flux:dropdown position="bottom" align="end">
+                                                            <flux:button
+                                                                size="xs"
+                                                                variant="ghost"
+                                                                icon="user-plus"
+                                                                inset
+                                                                tooltip="{{ __('Assigner') }}"
+                                                                aria-label="{{ __('Assigner le ticket') }}"
+                                                                class="text-zinc-400! hover:text-zinc-600! dark:text-zinc-500! dark:hover:text-zinc-300!"
+                                                            />
 
-                                                        <flux:menu>
-                                                            <flux:menu.group heading="{{ __('Assigner à') }}">
-                                                                @forelse ($users as $userId => $userName)
-                                                                    <flux:menu.item
-                                                                        wire:key="assign-{{ $card['id'] }}-{{ $userId }}"
-                                                                        wire:click="assignTicket('{{ $card['id'] }}', {{ $userId }})"
-                                                                        :icon="$assigneeId === $userId ? 'check' : null"
-                                                                    >
-                                                                        {{ $userName }}
-                                                                    </flux:menu.item>
-                                                                @empty
-                                                                    <flux:menu.item disabled>{{ __('Aucun utilisateur disponible') }}</flux:menu.item>
-                                                                @endforelse
-                                                            </flux:menu.group>
-                                                        </flux:menu>
-                                                    </flux:dropdown>
+                                                            <flux:menu>
+                                                                <flux:menu.group heading="{{ __('Assigner à') }}">
+                                                                    @forelse ($users as $userId => $userName)
+                                                                        <flux:menu.item
+                                                                            wire:key="assign-{{ $card['id'] }}-{{ $userId }}"
+                                                                            wire:click="assignTicket('{{ $card['id'] }}', {{ $userId }})"
+                                                                            :icon="$assigneeId === $userId ? 'check' : null"
+                                                                        >
+                                                                            {{ $userName }}
+                                                                        </flux:menu.item>
+                                                                    @empty
+                                                                        <flux:menu.item disabled>{{ __('Aucun utilisateur disponible') }}</flux:menu.item>
+                                                                    @endforelse
+                                                                </flux:menu.group>
+                                                            </flux:menu>
+                                                        </flux:dropdown>
+                                                    @endif
                                                 </div>
                                             </div>
 
@@ -355,6 +361,7 @@
                                                 @endif
                                             </div>
 
+                                            {{-- Pied de carte : client à gauche, assigné à droite (visible par tous, nom au survol) --}}
                                             <div class="flex items-center justify-between gap-2">
                                                 <flux:text class="min-w-0 truncate text-xs">{{ $card['client'] }}</flux:text>
 

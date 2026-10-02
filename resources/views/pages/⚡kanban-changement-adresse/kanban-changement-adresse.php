@@ -4,6 +4,7 @@ use App\Services\CosmiaApi;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 new class extends Component
@@ -67,6 +68,13 @@ new class extends Component
     public ?int $meId = null;
 
     /**
+     * true si super_admin ou admin : seuls ces rôles peuvent assigner
+     * un ticket à un autre utilisateur. Non modifiable depuis le navigateur.
+     */
+    #[Locked]
+    public bool $canAssign = false;
+
+    /**
      * Total des tickets assignés à l'utilisateur connecté (tous statuts, projet affiché,
      * catégorie verrouillée si définie).
      * null = pas encore connu (ou erreur au premier chargement) : le compteur est masqué.
@@ -85,7 +93,8 @@ new class extends Component
         // Catégorie verrouillée : appliquée d'office
         $this->labelId = (string) (self::LOCKED_LABEL ?? '');
 
-        $this->meId = $this->currentUserId();
+        $this->meId      = $this->currentUserId();
+        $this->canAssign = $this->canAssignTickets();
     }
 
     /**
@@ -269,9 +278,17 @@ new class extends Component
 
     /**
      * Assigne un ticket à un utilisateur via l'API.
+     * Réservé aux rôles super_admin et admin.
      */
     public function assignTicket(int|string $id, int $userId): void
     {
+        // Contrôle serveur, revérifié à la source
+        if (! $this->canAssignTickets()) {
+            $this->dispatch('ticket-moved', message: __("Vous n'êtes pas autorisé à assigner un ticket."));
+
+            return;
+        }
+
         if (! isset($this->users[$userId])) {
             $this->dispatch('ticket-moved', message: __('Utilisateur inconnu.'));
 
@@ -283,6 +300,7 @@ new class extends Component
 
     /**
      * « Prendre le ticket » : l'assigne à l'utilisateur connecté.
+     * Ouvert à tout utilisateur « treating ».
      */
     public function takeTicket(int|string $id): void
     {
@@ -361,21 +379,44 @@ new class extends Component
         );
     }
 
-    /**
-     * Id de l'utilisateur connecté, lu dans le payload du JWT Cosmia (session).
-     */
-    private function currentUserId(): ?int
+    /** Payload du JWT Cosmia (session), ou tableau vide. */
+    private function jwtPayload(): array
     {
         $token   = session('cosmia_token');
         $payload = is_string($token) ? (explode('.', $token)[1] ?? null) : null;
 
         if (! $payload) {
-            return null;
+            return [];
         }
 
-        $data = json_decode((string) base64_decode(strtr($payload, '-_', '+/')), true) ?: [];
+        return json_decode((string) base64_decode(strtr($payload, '-_', '+/')), true) ?: [];
+    }
+
+    /**
+     * Id de l'utilisateur connecté, lu dans le payload du JWT Cosmia (session).
+     */
+    private function currentUserId(): ?int
+    {
+        $data = $this->jwtPayload();
 
         return isset($data['id']) ? (int) $data['id'] : null;
+    }
+
+    /** Rôle de l'utilisateur connecté (session, sinon payload du JWT). */
+    private function currentRole(): ?string
+    {
+        $role = session('cosmia_role') ?? ($this->jwtPayload()['role'] ?? null);
+
+        return is_string($role) ? $role : null;
+    }
+
+    /**
+     * super_admin et admin peuvent assigner un ticket à n'importe quel utilisateur.
+     * Adapter la liste si l'API utilise un autre libellé pour le rôle admin.
+     */
+    private function canAssignTickets(): bool
+    {
+        return in_array($this->currentRole(), ['super_admin', 'admin'], true);
     }
 
     /**

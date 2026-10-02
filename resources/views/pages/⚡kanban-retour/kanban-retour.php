@@ -54,6 +54,13 @@ new class extends Component
     #[Locked]
     public ?array $allowedProjectIds = null;
 
+    /**
+     * true si super_admin ou admin : seuls ces rôles peuvent assigner
+     * un ticket à un autre utilisateur. Non modifiable depuis le navigateur.
+     */
+    #[Locked]
+    public bool $canAssign = false;
+
     /** Projet affiché ('all' réservé au super_admin). Change via setProject(). */
     #[Locked]
     public string $projectId = 'all';
@@ -93,7 +100,8 @@ new class extends Component
      */
     public function mount(): void
     {
-        $this->meId = $this->currentUserId();
+        $this->meId      = $this->currentUserId();
+        $this->canAssign = $this->canAssignTickets();
 
         // Fail closed : non-admin = aucun projet tant que l'API n'a pas répondu
         $this->allowedProjectIds = $this->isSuperAdmin() ? null : [];
@@ -327,8 +335,19 @@ new class extends Component
         );
     }
 
+    /**
+     * Assigne un ticket à un utilisateur.
+     * Réservé aux rôles super_admin et admin.
+     */
     public function assignTicket(int|string $id, int $userId): void
     {
+        // Contrôle serveur, revérifié à la source
+        if (! $this->canAssignTickets()) {
+            $this->dispatch('ticket-moved', message: __("Vous n'êtes pas autorisé à assigner un ticket."));
+
+            return;
+        }
+
         if (! isset($this->users[$userId])) {
             $this->dispatch('ticket-moved', message: __('Utilisateur inconnu.'));
 
@@ -338,6 +357,10 @@ new class extends Component
         $this->applyAssignment($id, $userId, $this->users[$userId]);
     }
 
+    /**
+     * « Prendre le ticket » : l'assigne à l'utilisateur connecté.
+     * Ouvert à tout utilisateur « treating ».
+     */
     public function takeTicket(int|string $id): void
     {
         $me = $this->currentUserId();
@@ -443,11 +466,26 @@ new class extends Component
         return isset($data['id']) ? (int) $data['id'] : null;
     }
 
-    private function isSuperAdmin(): bool
+    /** Rôle de l'utilisateur connecté (session, sinon payload du JWT). */
+    private function currentRole(): ?string
     {
         $role = session('cosmia_role') ?? ($this->jwtPayload()['role'] ?? null);
 
-        return $role === 'super_admin';
+        return is_string($role) ? $role : null;
+    }
+
+    private function isSuperAdmin(): bool
+    {
+        return $this->currentRole() === 'super_admin';
+    }
+
+    /**
+     * super_admin et admin peuvent assigner un ticket à n'importe quel utilisateur.
+     * Adapter la liste si l'API utilise un autre libellé pour le rôle admin.
+     */
+    private function canAssignTickets(): bool
+    {
+        return in_array($this->currentRole(), ['super_admin', 'admin'], true);
     }
 
     /**
