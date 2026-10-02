@@ -71,16 +71,6 @@ new #[Layout('layouts::auth.split')] class extends Component
         RateLimiter::clear($key);
 
         $data = $response->json();
-
-        $user = User::updateOrCreate(
-            ['email' => $this->email],
-            [
-                'name'     => data_get($data, 'name', $this->email),
-                'password' => Hash::make(Str::random(40)),
-            ]
-        );
-
-        Auth::login($user, $this->remember);
         session()->regenerate();
         session([
             'cosmia_token' => data_get($data, 'token'),
