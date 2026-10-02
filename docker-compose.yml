@@ -3,28 +3,28 @@ version: "3.9"
 networks:
     traefik-public:
         external: true
-    cosm-ia-net:
+    cosmia-sav:
         external: true
 
 services:
-    cosm-ia-app:
+    sav-app:
         build: .
         container_name: sav-app
         restart: unless-stopped
         env_file:
             - .env
         volumes:
-            - cosm-ia-storage:/var/www/html/storage
+            - sav-storage:/var/www/html/storage
         networks:
-            - cosm-ia-net
+            - cosmia-sav
             - traefik-public
         labels:
             - traefik.enable=true
             - traefik.docker.network=traefik-public
-            - traefik.http.routers.cosm-ia.rule=Host(`cosmia.astucom.com`)
-            - traefik.http.routers.cosm-ia.entrypoints=websecure
-            - traefik.http.routers.cosm-ia.tls.certresolver=letsencrypt
-            - traefik.http.services.cosm-ia.loadbalancer.server.port=80
+            - traefik.http.routers.sav.rule=Host(`cosmia.astucom.com`)
+            - traefik.http.routers.sav.entrypoints=websecure
+            - traefik.http.routers.sav.tls.certresolver=letsencrypt
+            - traefik.http.services.sav.loadbalancer.server.port=80
 
 volumes:
-    cosm-ia-storage:
+    sav-storage:
