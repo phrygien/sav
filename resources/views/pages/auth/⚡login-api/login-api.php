@@ -3,7 +3,6 @@
 use App\Models\User;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
@@ -19,8 +18,6 @@ new #[Layout('layouts::auth.split')] class extends Component
 
     #[Validate('required|string')]
     public string $password = '';
-
-    public bool $remember = false;
 
     public function login(): void
     {
@@ -71,10 +68,25 @@ new #[Layout('layouts::auth.split')] class extends Component
         RateLimiter::clear($key);
 
         $data = $response->json();
+
+        // Utilisateur en mémoire (non sauvegardé en base)
+        $user = new User([
+            'name'  => data_get($data, 'name', $this->email),
+            'email' => $this->email,
+        ]);
+        $user->id = data_get($data, 'id', $this->email);
+
+        Auth::login($user);
         session()->regenerate();
+
         session([
             'cosmia_token' => data_get($data, 'token'),
             'cosmia_role'  => data_get($data, 'role'),
+            'cosmia_user'  => [
+                'id'    => $user->id,
+                'name'  => $user->name,
+                'email' => $user->email,
+            ],
         ]);
 
         if (data_get($data, 'role') === 'super_admin') {
