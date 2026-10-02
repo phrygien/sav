@@ -34,7 +34,6 @@
     </flux:navbar>
 
     <flux:spacer />
-
     @auth
         @can('manage-access')
             <flux:dropdown>
@@ -50,18 +49,17 @@
                             Ajouter un utilisateur
                         </flux:navmenu.item>
                     @endcan
-
-                    @can('assign-user-project')
-                        <flux:navmenu.item href="#" icon="link">
-                            Associer un utilisateur à un projet
-                        </flux:navmenu.item>
-                    @endcan
                 </flux:navmenu>
             </flux:dropdown>
 
             <flux:separator vertical class="my-2 mx-2" />
         @endcan
-
+            <flux:radio.group x-data variant="segmented" x-model="$flux.appearance">
+                <flux:radio value="light" icon="sun"></flux:radio>
+                <flux:radio value="dark" icon="moon"></flux:radio>
+                <flux:radio value="system" icon="computer-desktop"></flux:radio>
+            </flux:radio.group>
+            <flux:separator vertical class="my-2 mx-2" />
         <flux:dropdown position="bottom" align="end">
             <flux:profile
                 :initials="$initials"

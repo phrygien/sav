@@ -254,6 +254,8 @@ new class extends Component
                     'ticket_id' => $this->ticketId,
                     'note'      => ['content' => $clean],
                 ]);
+            Flux::toast(variant: 'success', text: __('Profile updated.'));
+            //$this->notify(__('Note enregistrée'), 'success');
         } catch (\RuntimeException $e) {
             Log::error('addNote KO', ['method' => $method, 'ticket' => $this->ticketId, 'error' => $e->getMessage()]);
             $this->notify(__("Impossible d'enregistrer la note !"), 'danger');

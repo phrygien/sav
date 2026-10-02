@@ -287,9 +287,11 @@
                                                         <flux:badge color="blue" size="sm">{{ $card['label'] }}</flux:badge>
                                                     @endif
 
-                                                    @if ($card['attention'])
-                                                        <flux:badge color="amber" size="sm">{{ __('Attention') }}</flux:badge>
-                                                    @endif
+                                                        @if ($card['attention'])
+                                                            <flux:badge color="amber" size="sm" icon="chat-bubble-left-ellipsis">
+                                                                {{ __('Client a répondu') }}
+                                                            </flux:badge>
+                                                        @endif
 
                                                     @if ($projectId === 'all' && $card['project'])
                                                         <flux:badge color="zinc" size="sm">{{ $card['project'] }}</flux:badge>

@@ -9,7 +9,7 @@ trait NotifiesWithToast
     // variantes Flux : success | warning | danger (null / 'info' = neutre)
     protected function notify(string $message, ?string $variant = null): void
     {
-        if ($variant === null || $variant === 'info') {
+        if ($variant === null || $variant === 'success') {
             Flux::toast(text: $message);
 
             return;
