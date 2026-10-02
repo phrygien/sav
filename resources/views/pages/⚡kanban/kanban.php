@@ -75,6 +75,12 @@ new class extends Component
     /** Id Cosmia de l'utilisateur connecté (affichage uniquement, les actions utilisent currentUserId()) */
     public ?int $meId = null;
 
+    /**
+     * Total des tickets assignés à l'utilisateur connecté (tous statuts, projet affiché).
+     * null = pas encore connu (ou erreur au premier chargement) : le compteur est masqué.
+     */
+    public ?int $mineCount = null;
+
     /** @var array<string, array{tickets: array, page: int, lastPage: int, total: int, error: ?string}> */
     public array $columns = [];
 
@@ -189,6 +195,71 @@ new class extends Component
         $this->loadAll();
     }
 
+    /**
+     * Rafraîchissement silencieux (wire:poll, toutes les 2 minutes) :
+     * recharge les pages déjà affichées de chaque colonne, en parallèle,
+     * sans perdre le scroll infini et sans afficher d'erreur.
+     * Si un appel échoue, la colonne concernée garde son état actuel.
+     */
+    public function refresh(): void
+    {
+        if (! $this->ready || ! $this->isProjectAllowed()) {
+            return;
+        }
+
+        $statuses = array_keys(self::STATUSES);
+        $requests = [];
+
+        foreach ($statuses as $status) {
+            $pages = max((int) ($this->columns[$status]['page'] ?? 1), 1);
+
+            for ($p = 1; $p <= $pages; $p++) {
+                $requests["{$status}|{$p}"] = ['/ticket', $this->queryFor($status, $p)];
+            }
+        }
+
+        // Compteur « mes tickets » dans la même salve parallèle
+        $requests += $this->mineCountRequests();
+
+        $results = app(CosmiaApi::class)->pool($requests);
+
+        $this->applyMineCount($results);
+
+        foreach ($statuses as $status) {
+            $pages   = max((int) ($this->columns[$status]['page'] ?? 1), 1);
+            $tickets = [];
+            $meta    = null;
+            $failed  = false;
+
+            for ($p = 1; $p <= $pages; $p++) {
+                $res = $results["{$status}|{$p}"] ?? null;
+
+                if (! is_array($res)) {
+                    $failed = true; // erreur : on garde l'état actuel de la colonne
+                    break;
+                }
+
+                $meta = $res;
+
+                foreach ($res['data'] ?? [] as $t) {
+                    $tickets[] = $this->present($t);
+                }
+            }
+
+            if ($failed || $meta === null) {
+                continue;
+            }
+
+            $this->columns[$status] = [
+                'tickets'  => $tickets,
+                'page'     => $pages,
+                'lastPage' => (int) ($meta['total_page'] ?? 1),
+                'total'    => (int) ($meta['total_item'] ?? count($tickets)),
+                'error'    => null,
+            ];
+        }
+    }
+
     public function colorForName(string $name): string
     {
         return $this->avatarColors[crc32($name) % count($this->avatarColors)];
@@ -211,12 +282,14 @@ new class extends Component
 
     public function updatedLabelId(): void
     {
-        $this->loadAll();
+        // Le compteur « mes tickets » ne dépend pas de la catégorie
+        $this->loadAll(refreshMineCount: false);
     }
 
     public function updatedSearch(): void
     {
-        $this->loadAll();
+        // Le compteur « mes tickets » ne dépend pas de la recherche
+        $this->loadAll(refreshMineCount: false);
     }
 
     public function toggleMine(): void
@@ -226,7 +299,9 @@ new class extends Component
         }
 
         $this->mine = ! $this->mine;
-        $this->loadAll();
+
+        // Le compteur ne change pas en activant/désactivant le filtre
+        $this->loadAll(refreshMineCount: false);
     }
 
     public function loadMore(string $status): void
@@ -367,8 +442,10 @@ new class extends Component
             return;
         }
 
+        $me = $this->currentUserId();
+
         // Filtre « mes tickets » actif et ticket confié à quelqu'un d'autre : il quitte le board
-        $leavesBoard = $this->mine && $userId !== $this->currentUserId();
+        $leavesBoard = $this->mine && $userId !== $me;
         $num = '';
 
         foreach ($this->columns as $status => $column) {
@@ -378,6 +455,17 @@ new class extends Component
                 }
 
                 $num = $ticket['num'];
+
+                // Ajuste le compteur « mes tickets » selon l'ancien et le nouvel assigné
+                $previousAssignee = isset($ticket['assignee_id']) ? (int) $ticket['assignee_id'] : null;
+
+                if ($this->mineCount !== null && $me !== null) {
+                    if ($previousAssignee === $me && $userId !== $me) {
+                        $this->mineCount = max($this->mineCount - 1, 0);
+                    } elseif ($previousAssignee !== $me && $userId === $me) {
+                        $this->mineCount++;
+                    }
+                }
 
                 if ($leavesBoard) {
                     unset($this->columns[$status]['tickets'][$i]);
@@ -472,9 +560,10 @@ new class extends Component
     }
 
     /**
-     * Charge la 1re page des 3 colonnes en parallèle (un seul tour réseau).
+     * Charge la 1re page des 3 colonnes en parallèle (un seul tour réseau),
+     * avec en plus le compteur « mes tickets » dans la même salve.
      */
-    private function loadAll(): void
+    private function loadAll(bool $refreshMineCount = true): void
     {
         if (! $this->ready) {
             return;
@@ -487,6 +576,10 @@ new class extends Component
                 $this->columns[$status] = $this->emptyColumn();
             }
 
+            if ($refreshMineCount) {
+                $this->mineCount = 0;
+            }
+
             return;
         }
 
@@ -496,11 +589,69 @@ new class extends Component
             $requests[$status] = ['/ticket', $this->queryFor($status, 1)];
         }
 
+        if ($refreshMineCount) {
+            $requests += $this->mineCountRequests();
+        }
+
         $results = app(CosmiaApi::class)->pool($requests);
+
+        if ($refreshMineCount) {
+            $this->applyMineCount($results);
+        }
 
         foreach ($statuses as $status) {
             $this->hydrateColumn($status, 1, $results[$status]);
         }
+    }
+
+    /**
+     * 1 requête légère (per_page=1) par statut : seul `total_item` nous intéresse.
+     * Filtré par projet affiché et par utilisateur connecté, indépendamment du filtre « mine ».
+     *
+     * @return array<string, array>
+     */
+    private function mineCountRequests(): array
+    {
+        $me = $this->currentUserId();
+
+        if ($me === null) {
+            return [];
+        }
+
+        $requests = [];
+
+        foreach (array_keys(self::STATUSES) as $status) {
+            $requests["mine|{$status}"] = ['/ticket', array_filter([
+                'page'       => 1,
+                'per_page'   => 1,
+                'status'     => $status,
+                'project_id' => $this->projectId === 'all' ? null : $this->projectId,
+                'user_id'    => $me,
+            ], fn ($value) => $value !== null && $value !== '')];
+        }
+
+        return $requests;
+    }
+
+    /**
+     * Additionne les total_item des 3 statuts.
+     * Si un appel échoue, on garde la valeur précédente (jamais de total partiel).
+     */
+    private function applyMineCount(array $results): void
+    {
+        $total = 0;
+
+        foreach (array_keys(self::STATUSES) as $status) {
+            $res = $results["mine|{$status}"] ?? null;
+
+            if (! is_array($res)) {
+                return;
+            }
+
+            $total += (int) ($res['total_item'] ?? count($res['data'] ?? []));
+        }
+
+        $this->mineCount = $total;
     }
 
     /**
@@ -604,4 +755,3 @@ new class extends Component
         ];
     }
 };
-?>

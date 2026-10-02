@@ -73,6 +73,13 @@
                 :disabled="! $ready"
             >
                 {{ __('Ticket qui m’est assigné') }}
+
+                {{-- Total des tickets assignés à l'utilisateur (tous statuts, projet affiché) --}}
+                @if ($ready && $mineCount !== null)
+                    <span class="ml-1.5 inline-flex min-w-5 items-center justify-center rounded-full bg-black/10 px-1.5 text-xs font-semibold leading-5 dark:bg-white/20">
+                        {{ number_format($mineCount, 0, ',', ' ') }}
+                    </span>
+                @endif
             </flux:button>
         </flux:breadcrumbs>
 

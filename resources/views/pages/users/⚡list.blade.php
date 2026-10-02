@@ -1,57 +1,138 @@
 <?php
 
 use App\Services\CosmiaApi;
+use Illuminate\Support\Facades\Cache;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 new class extends Component
 {
-    public array $users = [];
+    // Cache court (secondes) : la liste des utilisateurs et leurs projets bougent peu
+    private const CACHE_TTL = 120;
 
     /**
-     * Projets par utilisateur : [user_id => [['id' => 3, 'name' => 'DIGIPARF'], ...]]
-     * Une valeur null signifie que le chargement a échoué pour cet utilisateur.
+     * Lignes déjà mises en forme, prêtes à afficher :
+     * ['id', 'name', 'email', 'is_admin', 'role_label', 'treating', 'projects']
+     * 'projects' = null si le chargement a échoué pour cet utilisateur,
+     * sinon une liste de ['id' => 3, 'name' => 'DIGIPARF'].
      */
-    public array $userProjects = [];
+    #[Locked]
+    public array $rows = [];
 
     public ?string $error = null;
 
-    public function mount(CosmiaApi $api): void
+    /** false tant que les données n'ont pas été chargées (rendu initial = squelette) */
+    public bool $loaded = false;
+
+    /**
+     * Cache chaud : liste complète dès la première réponse, sans squelette ni 2e requête.
+     * Cache vide : squelette, puis load() via wire:init.
+     */
+    public function mount(): void
     {
-        try {
-            $this->users = $api->get('user');
-        } catch (\RuntimeException $e) {
-            $this->error = $e->getMessage();
+        $cached = Cache::get($this->cacheKey());
+
+        if (is_array($cached)) {
+            $this->rows   = $cached;
+            $this->loaded = true;
+        }
+    }
+
+    /** Chargement différé (wire:init) */
+    public function load(): void
+    {
+        if ($this->loaded) {
+            return;
+        }
+
+        $this->loadData();
+        $this->loaded = true;
+    }
+
+    /** « Réessayer » / « Actualiser » : ignore le cache */
+    public function refresh(): void
+    {
+        $this->loadData(true);
+        $this->loaded = true;
+    }
+
+    // Clé liée à la session : les droits de l'API dépendent du token de l'utilisateur
+    // (clé distincte de « cosmia.users » du Kanban, qui stocke un format différent)
+    private function cacheKey(): string
+    {
+        return 'cosmia.users.list.'.sha1((string) session('cosmia_token'));
+    }
+
+    private function loadData(bool $force = false): void
+    {
+        $this->error = null;
+
+        $key = $this->cacheKey();
+
+        if (! $force && is_array($cached = Cache::get($key))) {
+            $this->rows = $cached;
 
             return;
         }
 
-        $this->loadProjects($api);
-    }
+        $api = app(CosmiaApi::class);
 
-    private function loadProjects(CosmiaApi $api): void
-    {
+        try {
+            $users = $api->get('user');
+        } catch (\RuntimeException $e) {
+            $this->error = $e->getMessage();
+            $this->rows  = [];
+
+            return;
+        }
+
+        $users = array_is_list($users) ? $users : ($users['data'] ?? []);
+
+        // Un appel par utilisateur, tous lancés en parallèle (un seul tour réseau)
         $paths = [];
 
-        foreach ($this->users as $user) {
-            $paths[$user['id']] = 'user/userproject/'.$user['id'];
+        foreach ($users as $user) {
+            if (isset($user['id'])) {
+                $paths[$user['id']] = 'user/userproject/'.$user['id'];
+            }
         }
 
-        foreach ($api->getMany($paths) as $userId => $response) {
-            $this->userProjects[$userId] = $response === null
-                ? null
-                : collect($response['result'] ?? [])
-                    ->map(fn ($item) => [
-                        'id'   => data_get($item, 'project_id'),
-                        'name' => data_get($item, 'project_name')
-                            ?? 'Projet #'.data_get($item, 'project_id'),
-                    ])
-                    ->unique('id')
-                    ->values()
-                    ->all();
+        $responses = $api->getMany($paths);
+
+        $this->rows = collect($users)->map(function ($user) use ($responses) {
+            $response = $responses[$user['id'] ?? null] ?? null;
+            $role     = (string) ($user['role'] ?? '');
+
+            return [
+                'id'         => $user['id'] ?? null,
+                'name'       => (string) ($user['name'] ?? ''),
+                'email'      => (string) ($user['email'] ?? ''),
+                'is_admin'   => $role === 'super_admin',
+                'role_label' => $this->roleLabel($role),
+                'treating'   => (bool) ($user['treating'] ?? false),
+                'projects'   => $response === null
+                    ? null
+                    : collect($response['result'] ?? [])
+                        ->map(fn ($item) => [
+                            'id'   => data_get($item, 'project_id'),
+                            'name' => data_get($item, 'project_name')
+                                ?? 'Projet #'.data_get($item, 'project_id'),
+                        ])
+                        ->unique('id')
+                        ->values()
+                        ->all(),
+            ];
+        })->all();
+
+        // Les erreurs ne sont jamais mises en cache : si un seul appel a échoué, on ne garde rien
+        $complete = ! collect($this->rows)->contains(fn ($r) => $r['projects'] === null);
+
+        if ($complete) {
+            Cache::put($key, $this->rows, self::CACHE_TTL);
         }
     }
 
-    public function roleLabel(string $role): string
+    private function roleLabel(string $role): string
     {
         return match ($role) {
             'super_admin' => __('Super admin'),
@@ -62,40 +143,93 @@ new class extends Component
 };
 ?>
 
-<div class="space-y-6">
+{{-- wire:init sur un <div> : Blade n'accepte pas @if dans les attributs d'un composant <flux:...> --}}
+<div class="space-y-6" @if (! $loaded) wire:init="load" @endif>
     <div class="flex flex-wrap items-center justify-between gap-4">
         <div>
             <flux:heading size="xl" level="1">{{ __('Utilisateurs') }}</flux:heading>
             <flux:subheading>
-                {{ trans_choice(':count utilisateur|:count utilisateurs', count($users)) }}
+                @if ($loaded)
+                    {{ trans_choice(':count utilisateur|:count utilisateurs', count($rows)) }}
+                @else
+                    <span class="inline-block h-4 w-24 animate-pulse rounded bg-zinc-200 align-middle dark:bg-zinc-700"></span>
+                @endif
             </flux:subheading>
         </div>
 
-        @can('create-user')
-            <flux:button
-                variant="primary"
-                icon="plus"
-                :href="route('users.create')"
-                wire:navigate
-            >
-                {{ __('Ajouter un utilisateur') }}
-            </flux:button>
-        @endcan
+        <div class="flex items-center gap-2">
+            {{-- Les données sont gardées 2 min côté serveur : ce bouton force une mise à jour --}}
+            @if ($loaded)
+                <flux:button
+                    size="sm"
+                    variant="ghost"
+                    wire:click="refresh"
+                    wire:loading.attr="disabled"
+                    wire:target="refresh"
+                    :aria-label="__('Actualiser')"
+                >
+                    <i class="hgi-stroke hgi-refresh" wire:loading.remove wire:target="refresh"></i>
+                    <i class="hgi-stroke hgi-loading-03 animate-spin" wire:loading wire:target="refresh"></i>
+                </flux:button>
+            @endif
+
+            @can('create-user')
+                <flux:button
+                    variant="primary"
+                    icon="plus"
+                    :href="route('users.create')"
+                    wire:navigate
+                >
+                    {{ __('Ajouter un utilisateur') }}
+                </flux:button>
+            @endcan
+        </div>
     </div>
 
     @if (session('success'))
         <flux:callout variant="success" icon="check-circle" :heading="session('success')" />
     @endif
 
-    @if ($error)
-        <flux:callout variant="danger" icon="exclamation-circle" :heading="$error" />
-    @elseif (empty($users))
+    @if (! $loaded)
+        {{-- Squelette pendant le chargement initial --}}
+        <flux:card class="overflow-hidden !p-0">
+            <ul class="animate-pulse divide-y divide-zinc-200 dark:divide-zinc-700">
+                @foreach (range(1, 6) as $i)
+                    <li wire:key="sk-user-{{ $i }}" class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:gap-6">
+                        <div class="flex items-center gap-3 sm:w-72 sm:shrink-0">
+                            <div class="size-10 shrink-0 rounded-full bg-zinc-200 dark:bg-zinc-700"></div>
+                            <div class="flex-1 space-y-2">
+                                <div class="h-4 w-32 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                                <div class="h-3 w-44 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-1.5 sm:w-56 sm:shrink-0">
+                            <div class="h-5 w-20 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                            <div class="h-5 w-24 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                        </div>
+
+                        <div class="flex flex-1 gap-1.5">
+                            <div class="h-5 w-24 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                            <div class="h-5 w-20 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                        </div>
+                    </li>
+                @endforeach
+            </ul>
+        </flux:card>
+    @elseif ($error)
+        <flux:callout variant="danger" icon="exclamation-circle" :heading="$error">
+            <x-slot name="actions">
+                <flux:button size="sm" wire:click="refresh">{{ __('Réessayer') }}</flux:button>
+            </x-slot>
+        </flux:callout>
+    @elseif (empty($rows))
         <flux:callout icon="users" :heading="__('Aucun utilisateur trouvé.')" />
     @else
-        <flux:card class="overflow-hidden !p-0">
+        <flux:card wire:loading.class="opacity-60" wire:target="refresh" class="overflow-hidden !p-0 transition-opacity">
             <ul class="divide-y divide-zinc-200 dark:divide-zinc-700">
-                @foreach ($users as $user)
-                    @php $projects = $userProjects[$user['id']] ?? null; @endphp
+                @foreach ($rows as $user)
+                    @php $projects = $user['projects']; @endphp
 
                     <li
                         wire:key="user-{{ $user['id'] }}"
@@ -138,9 +272,9 @@ new class extends Component
                             <flux:badge
                                 size="sm"
                                 inset="top bottom"
-                                :color="$user['role'] === 'super_admin' ? 'purple' : 'zinc'"
+                                :color="$user['is_admin'] ? 'purple' : 'zinc'"
                             >
-                                {{ $this->roleLabel($user['role']) }}
+                                {{ $user['role_label'] }}
                             </flux:badge>
 
                             @if ($user['treating'])
