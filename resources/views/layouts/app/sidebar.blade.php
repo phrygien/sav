@@ -20,24 +20,7 @@
     <a href="{{ route('kanban') }}" wire:navigate aria-label="SAV CosmIA" class="max-lg:hidden mr-4 inline-flex items-center text-xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
         <span class="text-amber-500">Cosm</span>
         <span class="ml-2 inline-flex items-center">
-            IA<svg viewBox="0 0 24 34" xmlns="http://www.w3.org/2000/svg" class="mx-px h-[1.25em] w-auto" aria-hidden="true">
-                <!-- Halo -->
-                <circle cx="12" cy="12" r="11" fill="#fbbf24" opacity=".18">
-                    <animate attributeName="opacity" values=".12;.3;.12" dur="2.4s" repeatCount="indefinite"/>
-                </circle>
-                <!-- Verre -->
-                <path d="M12 2.5 a8.5 8.5 0 0 1 4.8 15.5 c-.9.7-1.3 1.6-1.3 2.7 v.8 h-7 v-.8 c0-1.1-.4-2-1.3-2.7 A8.5 8.5 0 0 1 12 2.5z" fill="#fbbf24"/>
-                <!-- Reflet -->
-                <path d="M8 8.5 a5 5 0 0 1 3-3" stroke="#fff" stroke-width="1.2" stroke-linecap="round" fill="none" opacity=".7"/>
-                <!-- Filament -->
-                <path d="M9.8 20 v-4.5 l2.2 2.2 l2.2 -2.2 V20" stroke="#92400e" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" fill="none">
-                    <animate attributeName="opacity" values="1;.65;1;.85;1" dur="2.4s" repeatCount="indefinite"/>
-                </path>
-                <!-- Culot -->
-                <rect x="8" y="21.8" width="8" height="2.6" rx="1" fill="currentColor" opacity=".85"/>
-                <rect x="8.4" y="25" width="7.2" height="2.6" rx="1" fill="currentColor" opacity=".7"/>
-                <path d="M9.6 28.2 h4.8 a2.4 2.4 0 0 1 -4.8 0z" fill="currentColor" opacity=".85"/>
-            </svg>
+            IA
         </span>
     </a>
     <flux:separator vertical class="my-2 mx-2" />
@@ -176,7 +159,7 @@
 
 {{ $slot }}
 @persist('toast')
-<flux:toast />
+<flux:toast position="top end" />
 @endpersist
 @fluxScripts
 </body>
