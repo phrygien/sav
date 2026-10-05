@@ -2,6 +2,9 @@
 
 use Illuminate\Support\Facades\Route;
 
+// Redirige les anciennes pages d'auth vers la page de connexion Cosmia
+Route::redirect('/login', '/auth-login', 301);
+Route::redirect('/register', '/auth-login', 301);
 Route::livewire('/auth-login', 'pages::auth.login-api')->name('auth.login');
 Route::middleware(['jwt-session-auth'])->group(function () {
     Route::view('/', 'dashboard')->name('home');
