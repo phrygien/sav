@@ -26,6 +26,9 @@
     <flux:separator vertical class="my-2 mx-2" />
 
     <flux:navbar class="max-lg:hidden">
+        @can('manage-access')
+            <flux:navbar.item href="{{ route('dashboard') }}" wire:navigate>Dashboard</flux:navbar.item>
+        @endcan
         <flux:navbar.item href="{{ route('kanban') }}" wire:navigate>Toutes les demandes</flux:navbar.item>
         <flux:navbar.item href="{{ route('kanban.retour.retractation') }}" wire:navigate>Retour & Retractations</flux:navbar.item>
         <flux:navbar.item href="{{ route('kanban.changement.adresse') }}" wire:navigate>Changement d'adresse</flux:navbar.item>
