@@ -40,4 +40,10 @@ return [
         'secret' => env('COSMIA_API_SECRET'),
     ],
 
+    'ticket_lock' => [
+        'url'          => env('TICKET_LOCK_URL'),
+        'internal_url' => env('TICKET_LOCK_INTERNAL_URL'),
+        'secret'       => env('TICKET_LOCK_SECRET'),
+    ],
+
 ];

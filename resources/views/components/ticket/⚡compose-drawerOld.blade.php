@@ -14,7 +14,6 @@ use Livewire\WithFileUploads;
  * Tiroir « Répondre à l'email » : rédaction, CC, pièces jointes (FilePond), aide IA, envoi.
  * Ouvert par l'événement `compose-open` émis par la page ticket.
  * Après envoi, émet `ticket-updated` pour que la page recharge le ticket.
- * À la fermeture (annuler / croix / Échap / envoi), émet `compose-closed` : la page libère le verrou Socket.IO.
  */
 new class extends Component
 {
@@ -83,23 +82,15 @@ new class extends Component
         }
 
         $this->showComposeDrawer = true;
-
-        // Le verrou « réponse en cours » est pris ICI, quand le tiroir s'ouvre réellement.
-        // Si updatedShowComposeDrawer() émet un `compose-closed` tardif (synchro différée de wire:model)
-        // dans la même réponse, il est émis AVANT ce `compose-opened` : le verrou reste donc détenu.
-        $this->dispatch('compose-opened');
     }
 
-    // Fermeture du drawer (croix, Échap, clic extérieur, Annuler) : on vide les pièces jointes
-    // et on prévient la page pour qu'elle libère le verrou « réponse en cours ».
-    // Attention : ce hook peut s'exécuter avec retard (synchro différée), d'où `compose-opened` dans open().
+    // Fermeture du drawer côté client (croix, Échap, clic extérieur) : on vide les pièces jointes
     public function updatedShowComposeDrawer(bool $open): void
     {
         if (! $open) {
             $this->photos      = [];
             $this->pendingFile = null;
             $this->dispatch('attachments-cleared');
-            $this->dispatch('compose-closed');
         }
     }
 
@@ -337,7 +328,6 @@ new class extends Component
         $this->subjectOriginal     = '';
 
         $this->dispatch('attachments-cleared');
-        $this->dispatch('compose-closed');   // libère le verrou « réponse en cours »
         $this->dispatch('ticket-updated');
 
         // Le rendu sombre/clair inversé vient de <flux:toast invert /> dans le layout
@@ -375,8 +365,7 @@ new class extends Component
     }
 };
 ?>
-{{-- compose-denied : émis par ticket-lock.js si quelqu'un d'autre a pris le verrou entre-temps -> on referme le tiroir --}}
-<div @compose-denied.window="$wire.set('showComposeDrawer', false)">
+<div>
     @assets
     <link href="https://unpkg.com/filepond@^4/dist/filepond.min.css" rel="stylesheet" />
     <style>
@@ -402,14 +391,7 @@ new class extends Component
     @endphp
 
     {{-- ========== Drawer extra-large : envoi mail ========== --}}
-    {{-- @close : filet de sécurité côté navigateur, libère le verrou même avant la synchro Livewire --}}
-    <flux:modal
-        wire:model.self="showComposeDrawer"
-        variant="flyout"
-        position="right"
-        class="w-full max-w-full p-0 md:w-[64rem]"
-        @close="$dispatch('compose-closed')"
-    >
+    <flux:modal wire:model.self="showComposeDrawer" variant="flyout" position="right" class="w-full max-w-full p-0 md:w-[64rem]">
         <div class="flex h-full flex-col">
 
             {{-- En-tête --}}
