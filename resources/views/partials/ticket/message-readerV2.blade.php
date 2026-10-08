@@ -1,4 +1,5 @@
 {{-- Card 2 : panneau de lecture. Attend : $selected, $messages, $metas, $details, $selectedMessageIndex, $translatedMessage --}}
+{{-- Le bouton « Répondre » utilise aussi `lockedByOther` et `lockedBy`, fournis par le x-data="ticketLock(...)" de la page --}}
 @use('App\Support\MailText')
 
 @assets
@@ -76,15 +77,41 @@
                 </flux:button>
             @endif
 
-            <flux:button size="sm" variant="primary" wire:click="openCompose">
-                <span class="flex items-center gap-2">
+            {{-- Répondre : désactivé et remplacé par « {nom} est en train de répondre » quand un autre utilisateur a le verrou --}}
+            <flux:button
+                size="sm"
+                variant="primary"
+                wire:click="openCompose"
+                x-bind:disabled="lockedByOther"
+                x-bind:title="lockedByOther ? lockedBy + @js(' ' . __('est en train de répondre à ce client')) : ''"
+            >
+                <span x-show="! lockedByOther" class="flex items-center gap-2">
                     @if (count($messages) > 0)
-                        <i class="hgi-stroke hgi-arrow-turn-backward"></i>
                         <span>{{ __('Répondre') }}</span>
                     @else
                         <i class="hgi-stroke hgi-sent"></i>
                         <span>{{ __('Nouveau message') }}</span>
                     @endif
+                </span>
+
+                <span x-show="lockedByOther" x-cloak style="display: none" class="flex items-center gap-2">
+                    {{-- Avatar avec les initiales de l'utilisateur (calculées côté Alpine car lockedBy est dynamique) --}}
+                    <span
+                        class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white/20 text-[10px] font-semibold leading-none text-current dark:bg-zinc-900/15"
+                        x-text="(lockedBy || '').trim().split(/\s+/).map(w => w.charAt(0)).slice(0, 2).join('').toUpperCase()"
+                        aria-hidden="true"
+                    ></span>
+
+                    <span class="max-w-[16rem] truncate">
+                        <strong x-text="lockedBy"></strong> {{ __('est en train de répondre') }}
+                    </span>
+
+                    {{-- Animation « en train d'écrire » : trois points qui rebondissent en décalé --}}
+                    <span class="flex items-center gap-0.5" aria-hidden="true">
+                        <span class="size-1 animate-bounce rounded-full bg-current [animation-delay:-0.3s]"></span>
+                        <span class="size-1 animate-bounce rounded-full bg-current [animation-delay:-0.15s]"></span>
+                        <span class="size-1 animate-bounce rounded-full bg-current"></span>
+                    </span>
                 </span>
             </flux:button>
         </div>
