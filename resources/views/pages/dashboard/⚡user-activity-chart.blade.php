@@ -239,7 +239,7 @@ new class extends Component
                         data: s.data,
                         backgroundColor: s.color,
                         borderWidth: 0,
-                        maxBarThickness: 28,
+                        maxBarThickness: 36,
                     }));
 
                     return {
@@ -256,11 +256,17 @@ new class extends Component
                                     interaction: { mode: 'index', intersect: false },
                                     plugins: {
                                         legend: { position: 'bottom', labels: { color: c.text, usePointStyle: true } },
-                                        tooltip: { callbacks: { label: (ctx) => ' ' + ctx.dataset.label + ' : ' + ctx.parsed.y + ' Email' } },
+                                        tooltip: {
+                                            itemSort: (a, b) => b.parsed.y - a.parsed.y,
+                                            callbacks: {
+                                                label: (ctx) => ' ' + ctx.dataset.label + ' : ' + ctx.parsed.y + ' Email',
+                                                footer: (items) => 'Total : ' + items.reduce((sum, i) => sum + i.parsed.y, 0) + ' Email',
+                                            },
+                                        },
                                     },
                                     scales: {
-                                        x: { ticks: { color: c.text }, grid: { color: c.grid } },
-                                        y: { beginAtZero: true, title: { display: true, text: 'Email(s)', color: c.text }, ticks: { color: c.text, precision: 0 }, grid: { color: c.grid } },
+                                        x: { stacked: true, ticks: { color: c.text }, grid: { display: false } },
+                                        y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Email(s)', color: c.text }, ticks: { color: c.text, precision: 0 }, grid: { color: c.grid } },
                                     },
                                 },
                             });
