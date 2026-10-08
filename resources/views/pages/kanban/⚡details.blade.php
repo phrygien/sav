@@ -212,24 +212,60 @@ new class extends Component
             return;
         }
 
-        $this->hasNote = ! empty($res['note']['id']);
+        // getNote renvoie { ticket_id, note: { content } } : pas d'id, pas de clé "note" imbriquée
+        $this->note = $this->normalizeNote($res['note'] ?? null);
 
-        $raw = $res['note']['note'] ?? '';
-
-        $this->note = is_string($raw) ? $this->normalizeNote($raw) : '';
+        // Une note vide est refusée à l'enregistrement : si le contenu existe, la note existe (PUT)
+        $this->hasNote = filled($this->note);
     }
 
-    /** L'API renvoie le champ "note" sous forme de JSON encodé : on en extrait le HTML */
-    private function normalizeNote(string $raw): string
+    /**
+     * Extrait le HTML de la note. Formats acceptés :
+     *  - getNote      : ['content' => '<p>..</p>']
+     *  - POST/PUT     : ['note' => ['content' => '<p>..</p>'], 'id' => ..]
+     *  - chaîne JSON  : '{"content":"<p>..</p>"}'
+     *  - HTML brut    : '<p>..</p>'
+     */
+    private function normalizeNote(mixed $raw): string
     {
-        $decoded = json_decode($raw, true);
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
 
-        if (is_array($decoded)) {
-            // "test_note" : uniquement pour la note de test actuelle, à retirer ensuite
-            return (string) ($decoded['content'] ?? $decoded['test_note'] ?? '');
+            if (! is_array($decoded)) {
+                return $raw;
+            }
+
+            $raw = $decoded;
         }
 
-        return $raw;
+        if (! is_array($raw)) {
+            return '';
+        }
+
+        // Enveloppe imbriquée : ['note' => ['content' => ...]]
+        if (isset($raw['note'])) {
+            return $this->normalizeNote($raw['note']);
+        }
+
+        // "test_note" : uniquement pour la note de test actuelle, à retirer ensuite
+        return (string) ($raw['content'] ?? $raw['test_note'] ?? '');
+    }
+
+    /**
+     * Texte brut normalisé, pour comparer deux versions d'une même note
+     * sans être gêné par le HTML, les entités, les &nbsp; ou les espaces multiples.
+     */
+    private function plain(string $html): string
+    {
+        // Espace entre les blocs : "a</p><p>b" ne doit pas devenir "ab"
+        // Attention : ne jamais écrire "point d'interrogation + chevron fermant" dans la partie PHP de ce fichier
+        // (le compilateur Livewire le prend pour la fin du bloc PHP). D'où <br[^>]*> pour les balises br.
+        $html = preg_replace('/<\/(p|div|li|h[1-6]|tr)>|<br[^>]*>/i', ' ', $html) ?? $html;
+
+        $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = str_replace("\xC2\xA0", ' ', $text); // nbsp -> espace normal
+
+        return trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
     }
 
     /** POST /ticket/addNote (création) ou PUT /ticket/updateNote/{ticket_id} (modification) */
@@ -237,7 +273,7 @@ new class extends Component
     {
         $clean = Purifier::clean($this->note);
 
-        if (trim(html_entity_decode(strip_tags($clean))) === '') {
+        if ($this->plain($clean) === '') {
             $this->addError('note', __('La note est vide.'));
 
             return;
@@ -254,8 +290,6 @@ new class extends Component
                     'ticket_id' => $this->ticketId,
                     'note'      => ['content' => $clean],
                 ]);
-            Flux::toast(variant: 'success', text: __('Profile updated.'));
-            //$this->notify(__('Note enregistrée'), 'success');
         } catch (\RuntimeException $e) {
             Log::error('addNote KO', ['method' => $method, 'ticket' => $this->ticketId, 'error' => $e->getMessage()]);
             $this->notify(__("Impossible d'enregistrer la note !"), 'danger');
@@ -263,30 +297,31 @@ new class extends Component
             return;
         }
 
-        // Trace temporaire : permet de voir quelle méthode part et ce que l'API répond
         Log::info('addNote OK', ['method' => $method, 'ticket' => $this->ticketId, 'response' => $res]);
-
-        // DEBUG TEMPORAIRE : à supprimer une fois le problème trouvé
-        $this->notify("DEBUG {$method} → ".json_encode($res, JSON_UNESCAPED_UNICODE));
 
         // On relit la note côté API : l'éditeur affiche ce qui est réellement enregistré
         $this->fetchNote();
 
-        // DEBUG TEMPORAIRE
-        Log::info('getNote après save', ['hasNote' => $this->hasNote, 'note' => $this->note]);
-
         $this->resetErrorBag('note');
 
-        $saved = trim(html_entity_decode(strip_tags($this->note)));
-        $sent  = trim(html_entity_decode(strip_tags($clean)));
+        $sent  = $this->plain($clean);
+        $saved = $this->plain($this->note);
 
         if ($saved !== $sent) {
+            Log::warning('Note mismatch', [
+                'ticket'  => $this->ticketId,
+                'method'  => $method,
+                'hasNote' => $this->hasNote,
+                'sent'    => $sent,
+                'saved'   => $saved,
+            ]);
+
             $this->notify(__("L'API n'a pas enregistré la modification."), 'danger');
 
             return;
         }
 
-        $this->notify(__('Note enregistrée'));
+        $this->notify(__('Note enregistrée'), 'success');
     }
 
     /* ------------------------------------------------------------------ */
