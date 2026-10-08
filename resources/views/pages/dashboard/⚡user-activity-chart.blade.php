@@ -256,11 +256,11 @@ new class extends Component
                                     interaction: { mode: 'index', intersect: false },
                                     plugins: {
                                         legend: { position: 'bottom', labels: { color: c.text, usePointStyle: true } },
-                                        tooltip: { callbacks: { label: (ctx) => ' ' + ctx.dataset.label + ' : ' + ctx.parsed.y + ' action(s)' } },
+                                        tooltip: { callbacks: { label: (ctx) => ' ' + ctx.dataset.label + ' : ' + ctx.parsed.y + ' Email' } },
                                     },
                                     scales: {
                                         x: { ticks: { color: c.text }, grid: { color: c.grid } },
-                                        y: { beginAtZero: true, title: { display: true, text: 'Action(s)', color: c.text }, ticks: { color: c.text, precision: 0 }, grid: { color: c.grid } },
+                                        y: { beginAtZero: true, title: { display: true, text: 'Email(s)', color: c.text }, ticks: { color: c.text, precision: 0 }, grid: { color: c.grid } },
                                     },
                                 },
                             });
