@@ -3,10 +3,12 @@
 use App\Livewire\Concerns\NotifiesWithToast;
 use App\Services\CosmiaApi;
 use App\Support\MailText;
+use Firebase\JWT\JWT;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Livewire\Component;
 use Mews\Purifier\Facades\Purifier;
@@ -18,6 +20,7 @@ use Mews\Purifier\Facades\Purifier;
  * - Chatbot            -> <livewire:ticket.chatbot>
  * - Rédaction / envoi  -> <livewire:ticket.compose-drawer>
  * - Formatage de texte -> App\Support\MailText
+ * - Verrou "réponse en cours" -> serveur Socket.IO (resources/js/ticket-lock.js)
  * - Vues               -> resources/views/partials/ticket/*
  */
 new class extends Component
@@ -155,6 +158,56 @@ new class extends Component
             fn ($msg) => MailText::messageMeta($msg, $client, $support),
             $this->ticketDetails['conversation']['messages'] ?? []
         );
+    }
+
+    /** Config passée à Alpine (ticketLock) : URL publique du serveur Socket.IO + JWT signé */
+    #[Computed]
+    public function lockConfig(): array
+    {
+        // L'utilisateur Auth est "en mémoire" (non sauvegardé en base) : la source fiable est la session
+        // L'id renvoyé par l'API peut valoir 0 pour tous : l'email, lui, est unique
+        $id   = strtolower((string) session('cosmia_user.email', ''));
+        $name = (string) session('cosmia_user.name', 'Un utilisateur');
+
+        return [
+            'url'      => config('services.ticket_lock.url'),
+            'ticketId' => $this->ticketId,
+            'me'       => $id,
+            'token'    => JWT::encode([
+                'sub'  => $id,
+                'name' => $name,
+                'exp'  => time() + 12 * 3600,
+            ], (string) config('services.ticket_lock.secret'), 'HS256'),
+        ];
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  Verrou "réponse en cours"                                          */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * Interroge le serveur Socket.IO : renvoie le verrou détenu par UN AUTRE utilisateur, sinon null.
+     * Fail-open : si le serveur est injoignable, on ne bloque personne.
+     */
+    private function lockedByOther(): ?array
+    {
+        try {
+            $res = Http::withHeaders(['x-api-key' => (string) config('services.ticket_lock.secret')])
+                ->timeout(2)
+                ->get(rtrim((string) config('services.ticket_lock.internal_url'), '/')."/locks/{$this->ticketId}");
+
+            $lock = $res->successful() ? $res->json('lock') : null;
+        } catch (\Throwable $e) {
+            Log::warning('ticket-lock KO', ['ticket' => $this->ticketId, 'error' => $e->getMessage()]);
+
+            return null;
+        }
+
+        if (! is_array($lock) || (string) ($lock['userId'] ?? '') === strtolower((string) session('cosmia_user.email', ''))) {
+            return null;
+        }
+
+        return $lock;
     }
 
     /* ------------------------------------------------------------------ */
@@ -384,6 +437,16 @@ new class extends Component
     #[On('compose-request')]
     public function openCompose(): void
     {
+        // Garde côté serveur : le bouton désactivé côté navigateur ne suffit pas
+        if ($lock = $this->lockedByOther()) {
+            $this->notify(
+                __(':name est déjà en train de répondre à ce client.', ['name' => $lock['name'] ?? __('Un utilisateur')]),
+                'danger'
+            );
+
+            return;
+        }
+
         $detail   = $this->ticketDetails['details'][0] ?? [];
         $messages = $this->ticketDetails['conversation']['messages'] ?? [];
         $first    = $messages[0] ?? null;
@@ -405,12 +468,31 @@ new class extends Component
     }
 };
 ?>
-<div class="space-y-6" wire:init="loadTicket">
+<div
+    class="space-y-6"
+    wire:init="loadTicket"
+    x-data="ticketLock(@js($this->lockConfig))"
+    {{-- compose-opened : le tiroir s'est ouvert -> on prend le verrou. compose-closed / ticket-updated : on le libère --}}
+    @compose-opened.window="acquire()"
+    @compose-closed.window="release()"
+    @ticket-updated.window="release()"
+>
     @if ($error)
         <flux:callout variant="danger" icon="exclamation-circle" :heading="$error" />
     @elseif (! $loaded)
         @include('partials.ticket.skeleton')
     @else
+        {{-- Bandeau : un autre utilisateur est en train de répondre --}}
+        <div
+            x-show="lockedByOther"
+            x-cloak
+            style="display: none"
+            class="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+        >
+            <i class="hgi hgi-stroke hgi-lock-01"></i>
+            <span><strong x-text="lockedBy"></strong> {{ __('est en train de répondre à ce client.') }}</span>
+        </div>
+
         {{-- Variables partagées avec tous les partials ci-dessous (@include hérite du scope) --}}
         @php
             $details  = $ticketDetails['details'][0] ?? [];
