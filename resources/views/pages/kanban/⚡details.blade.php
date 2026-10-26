@@ -12,10 +12,11 @@ use Livewire\Component;
 use Mews\Purifier\Facades\Purifier;
 
 /**
- * Page détail d'un ticket : /kanban/details?ticket=12423
+ * Page détail d'un ticket : /kanban/details/12423
  *
  * Responsabilités de CE composant : chargement du ticket, onglets, statut, note, lecture des mails.
  * - Chatbot            -> <livewire:ticket.chatbot>
+ * - Tickets associés   -> <livewire:ticket.group-ticket> (drawer, toujours visible)
  * - Rédaction / envoi  -> <livewire:ticket.compose-drawer>
  * - Formatage de texte -> App\Support\MailText
  * - Vues               -> resources/views/partials/ticket/*
@@ -454,6 +455,15 @@ new class extends Component
             $tabs     = $this->tabs;
             $metas    = $this->metas;
         @endphp
+
+        {{-- Tickets associés : drawer, bouton visible quel que soit l'onglet actif --}}
+        <div class="flex justify-end">
+            <livewire:ticket.group-ticket
+                :ticket-id="$ticketId"
+                :active-id="$ticketId"
+                :key="'group-'.$ticketId"
+            />
+        </div>
 
         {{-- Mobile : select au-dessus / Desktop : onglets à gauche, contenu à droite --}}
         <div class="flex flex-col gap-6 sm:flex-row sm:items-start">

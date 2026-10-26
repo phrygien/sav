@@ -3,6 +3,7 @@
 use App\Livewire\Concerns\NotifiesWithToast;
 use App\Services\CosmiaApi;
 use Flux\Flux;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
@@ -318,12 +319,57 @@ new class extends Component
         try {
             app(CosmiaApi::class)->post($endpoint, $body);
         } catch (\RuntimeException $e) {
-            $this->showSendModal = false;
-            $this->notify(__("Erreur lors de l'envoi de l'email : ").$e->getMessage(), 'danger');
+            Log::warning('reply KO, vérification de l\'envoi', [
+                'ticket' => $this->ticketId,
+                'error'  => $e->getMessage(),
+            ]);
 
-            return;
+            // L'API a peut-être envoyé le mail malgré l'erreur : on vérifie avant de conclure
+            if (! $this->mailWasSent()) {
+                $this->showSendModal = false;
+
+                // On ne dit pas « échec » : l'envoi est incertain, et un renvoi risque un doublon
+                $this->dispatch('ticket-updated');
+                $this->notify(
+                    __("L'envoi n'a pas pu être confirmé. Vérifiez l'onglet Conversation avant de renvoyer, pour éviter un doublon."),
+                    'warning'
+                );
+
+                return;
+            }
         }
 
+        $this->finishSend($attachments);
+    }
+
+    /**
+     * Après une erreur API : relit le ticket et compare le nombre de messages.
+     * Plusieurs tentatives, car l'API peut encore être en train de traiter l'envoi.
+     */
+    private function mailWasSent(): bool
+    {
+        $before = (int) ($this->context['messages_count'] ?? 0);
+
+        foreach ([2, 3, 3] as $wait) {
+            sleep($wait);
+
+            try {
+                $data = app(CosmiaApi::class)->get("/ticket/{$this->ticketId}");
+            } catch (\RuntimeException) {
+                continue;
+            }
+
+            if (count($data['conversation']['messages'] ?? []) > $before) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Remise à zéro du tiroir + toast de succès */
+    private function finishSend(array $attachments): void
+    {
         $sentTo      = $this->destinateur;
         $attachCount = count($attachments);
 

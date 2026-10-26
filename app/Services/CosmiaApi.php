@@ -8,34 +8,48 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class CosmiaApi
 {
+    public const DEFAULT_TIMEOUT = 15;
+
     /**
      * @param  bool  $withUserToken  false = appel avec la seule clé x-secret-key (sans Bearer)
+     * @param  int   $timeout        durée max de l'appel, en secondes
      */
-    public function get(string $path, array $query = [], bool $withUserToken = true): array
+    public function get(string $path, array $query = [], bool $withUserToken = true, int $timeout = self::DEFAULT_TIMEOUT): array
     {
         return $this->send(
             fn (PendingRequest $request) => $request->get($path, $query),
-            $withUserToken
+            $withUserToken,
+            $timeout
         );
     }
 
-    public function post(string $path, array $body = []): array
+    public function post(string $path, array $body = [], int $timeout = self::DEFAULT_TIMEOUT): array
     {
-        return $this->send(fn (PendingRequest $request) => $request->post($path, $body));
+        return $this->send(
+            fn (PendingRequest $request) => $request->post($path, $body),
+            timeout: $timeout
+        );
     }
 
-    public function put(string $path, array $body = []): array
+    public function put(string $path, array $body = [], int $timeout = self::DEFAULT_TIMEOUT): array
     {
-        return $this->send(fn (PendingRequest $request) => $request->put($path, $body));
+        return $this->send(
+            fn (PendingRequest $request) => $request->put($path, $body),
+            timeout: $timeout
+        );
     }
 
-    public function delete(string $path, array $query = []): array
+    public function delete(string $path, array $query = [], int $timeout = self::DEFAULT_TIMEOUT): array
     {
-        return $this->send(fn (PendingRequest $request) => $request->delete($path, $query));
+        return $this->send(
+            fn (PendingRequest $request) => $request->delete($path, $query),
+            timeout: $timeout
+        );
     }
 
     /**
@@ -61,7 +75,7 @@ class CosmiaApi
                     ->withHeaders(['x-secret-key' => config('services.cosmia.secret')])
                     ->acceptJson()
                     ->asJson()
-                    ->timeout(15);
+                    ->timeout(self::DEFAULT_TIMEOUT);
 
                 if ($token) {
                     $request = $request->withToken($token);
@@ -109,7 +123,7 @@ class CosmiaApi
                     ->withHeaders(['x-secret-key' => config('services.cosmia.secret')])
                     ->acceptJson()
                     ->asJson()
-                    ->timeout(15);
+                    ->timeout(self::DEFAULT_TIMEOUT);
 
                 if ($token) {
                     $pending = $pending->withToken($token);
@@ -147,14 +161,16 @@ class CosmiaApi
 
     /**
      * @throws RuntimeException Le message est directement affichable à l'utilisateur.
+     *                          L'exception d'origine (cURL) reste accessible via getPrevious().
      */
-    private function send(Closure $call, bool $withUserToken = true): array
+    private function send(Closure $call, bool $withUserToken = true, int $timeout = self::DEFAULT_TIMEOUT): array
     {
         $request = Http::baseUrl(config('services.cosmia.url'))
             ->withHeaders(['x-secret-key' => config('services.cosmia.secret')])
             ->acceptJson()
             ->asJson()
-            ->timeout(15);
+            ->connectTimeout(10)
+            ->timeout($timeout);
 
         if ($withUserToken && ($token = session('cosmia_token'))) {
             $request = $request->withToken($token);
@@ -162,8 +178,16 @@ class CosmiaApi
 
         try {
             $response = $call($request);
-        } catch (ConnectionException) {
-            throw new RuntimeException(__('Service indisponible, réessaie dans un instant.'));
+        } catch (ConnectionException $e) {
+            Log::error('Cosmia connexion KO', [
+                'url'     => config('services.cosmia.url'),
+                'message' => $e->getMessage(),
+            ]);
+
+            throw new RuntimeException(
+                __('Service indisponible, réessaie dans un instant.'),
+                previous: $e
+            );
         }
 
         if ($response->failed()) {
