@@ -30,6 +30,7 @@ new class extends Component
 
     public bool $showComposeDrawer = false;
 
+    /** Affiche le bandeau de confirmation d'envoi (en bas du tiroir) */
     public bool $showSendModal = false;
 
     public string $destinateur = '';
@@ -96,8 +97,9 @@ new class extends Component
     public function updatedShowComposeDrawer(bool $open): void
     {
         if (! $open) {
-            $this->photos      = [];
-            $this->pendingFile = null;
+            $this->photos        = [];
+            $this->pendingFile   = null;
+            $this->showSendModal = false;
             $this->dispatch('attachments-cleared');
             $this->dispatch('compose-closed');
         }
@@ -410,7 +412,7 @@ new class extends Component
         class="w-full max-w-full p-0 md:w-[64rem]"
         @close="$dispatch('compose-closed')"
     >
-        <div class="flex h-full flex-col">
+        <div class="relative flex h-full flex-col overflow-hidden">
 
             {{-- En-tête --}}
             <div class="shrink-0 border-b border-zinc-200 px-6 py-5 pe-14 dark:border-white/10">
@@ -601,7 +603,7 @@ new class extends Component
             {{-- Pied fixe : actions --}}
             <div class="flex shrink-0 flex-wrap items-center gap-2 border-t border-zinc-200 bg-white px-6 py-4 dark:border-white/10 dark:bg-zinc-800">
                 <flux:modal.close>
-                    <flux:button variant="danger" size="sm">
+                    <flux:button variant="danger">
                         <span class="flex items-center gap-2">
                             <span>{{ __('Annuler') }}</span>
                         </span>
@@ -610,50 +612,65 @@ new class extends Component
 
                 <flux:spacer />
 
-                <flux:button size="sm" wire:click="correctionOpenAI" wire:loading.attr="disabled" wire:target="correctionOpenAI">
+                <flux:button wire:click="correctionOpenAI" wire:loading.attr="disabled" wire:target="correctionOpenAI">
                     <span class="flex items-center gap-2">
                         <i class="hgi-stroke hgi-magic-wand-01"></i>
                         <span>{{ __('Suggestion') }}</span>
                     </span>
                 </flux:button>
 
-                <flux:button size="sm" wire:click="translateOpenAI" wire:loading.attr="disabled" wire:target="translateOpenAI">
+                <flux:button wire:click="translateOpenAI" wire:loading.attr="disabled" wire:target="translateOpenAI">
                     <span class="flex items-center gap-2">
                         <i class="hgi-stroke hgi-translate"></i>
                         <span>{{ __('Traduire') }}</span>
                     </span>
                 </flux:button>
 
-                <flux:button size="sm" variant="primary" wire:click="$set('showSendModal', true)">
+                <flux:button variant="primary" color="green" wire:click="$set('showSendModal', true)">
                     <span class="flex items-center gap-2">
                         <i class="hgi-stroke hgi-sent"></i>
                         <span>{{ __('Envoyer la réponse') }}</span>
                     </span>
                 </flux:button>
             </div>
-        </div>
-    </flux:modal>
 
-    {{-- Modale : confirmer l'envoi (après le drawer dans le DOM pour s'afficher par-dessus) --}}
-    <flux:modal wire:model.self="showSendModal" class="md:w-[28rem]">
-        <div class="space-y-6">
-            <div>
-                <flux:heading size="lg">{{ __("Confirmer l'envoi") }}</flux:heading>
-                <flux:text class="mt-2">
-                    {{ __("Êtes-vous sûr de vouloir envoyer cette réponse ? L'email sera envoyé à") }}
-                    <strong>{{ $destinateur }}</strong>@if (! empty($photos)), {{ __('avec') }} <strong>{{ count($photos) }} {{ __('pièce(s) jointe(s)') }}</strong>@endif.
-                </flux:text>
-            </div>
+            {{-- Confirmation d'envoi : bandeau qui monte depuis le bas du tiroir --}}
+            <div
+                x-cloak
+                x-show="$wire.showSendModal"
+                x-transition:enter="transition ease-out duration-300"
+                x-transition:enter-start="translate-y-full opacity-0"
+                x-transition:enter-end="translate-y-0 opacity-100"
+                x-transition:leave="transition ease-in duration-200"
+                x-transition:leave-start="translate-y-0 opacity-100"
+                x-transition:leave-end="translate-y-full opacity-0"
+                role="alertdialog"
+                aria-live="assertive"
+                aria-label="{{ __("Confirmer l'envoi") }}"
+                class="absolute inset-x-0 bottom-0 z-20 border-t border-zinc-200 bg-white px-6 py-4 shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.25)] dark:border-white/10 dark:bg-zinc-800"
+            >
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
+                    <div class="min-w-0 flex-1">
+                        <div class="text-sm font-semibold text-zinc-900 dark:text-white">{{ __("Confirmer l'envoi ?") }}</div>
+                        <div class="mt-0.5 break-words text-sm text-zinc-500 dark:text-zinc-400">
+                            {{ __("L'email sera envoyé à") }}
+                            <strong class="text-zinc-700 dark:text-zinc-200">{{ $destinateur }}</strong>@if (! empty($photos)), {{ __('avec') }} <strong class="text-zinc-700 dark:text-zinc-200">{{ count($photos) }} {{ __('pièce(s) jointe(s)') }}</strong>@endif.
+                        </div>
+                    </div>
 
-            <div class="flex gap-2">
-                <flux:spacer />
-                <flux:modal.close><flux:button variant="ghost">{{ __('Annuler') }}</flux:button></flux:modal.close>
-                <flux:button variant="primary" wire:click="reply">
-                    <span class="flex items-center gap-2">
-                        <i class="hgi-stroke hgi-sent"></i>
-                        <span>{{ __('Envoyer maintenant') }}</span>
-                    </span>
-                </flux:button>
+                    <div class="flex shrink-0 items-center gap-2">
+                        <flux:button variant="danger" wire:click="$set('showSendModal', false)" wire:loading.attr="disabled" wire:target="reply">
+                            {{ __('Annuler') }}
+                        </flux:button>
+
+                        <flux:button variant="primary" color="green" wire:click="reply" wire:loading.attr="disabled" wire:target="reply">
+                            <span class="flex items-center gap-2">
+                                <i class="hgi-stroke hgi-sent"></i>
+                                <span>{{ __('Envoyer maintenant') }}</span>
+                            </span>
+                        </flux:button>
+                    </div>
+                </div>
             </div>
         </div>
     </flux:modal>

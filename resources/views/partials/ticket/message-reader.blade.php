@@ -76,10 +76,9 @@
                 </flux:button>
             @endif
 
-            <flux:button size="sm" variant="primary" wire:click="openCompose">
+            <flux:button variant="primary" color="green" wire:click="openCompose">
                 <span class="flex items-center gap-2">
                     @if (count($messages) > 0)
-                        <i class="hgi-stroke hgi-arrow-turn-backward"></i>
                         <span>{{ __('Répondre') }}</span>
                     @else
                         <i class="hgi-stroke hgi-sent"></i>
