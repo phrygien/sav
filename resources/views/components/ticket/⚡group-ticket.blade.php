@@ -219,7 +219,7 @@ new class extends Component
         set_time_limit(90);
 
         try {
-            $res = app(CosmiaApi::class)->put(self::CLOSE_ALL_ENDPOINT, [
+            $res = app(CosmiaApi::class)->post(self::CLOSE_ALL_ENDPOINT, [
                 'ticket_id' => (string) $this->ticketId,
             ]);
         } catch (\RuntimeException $e) {
