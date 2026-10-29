@@ -12,7 +12,7 @@ use Livewire\Component;
 use Livewire\WithFileUploads;
 
 /**
- * Tiroir « Répondre à l'email » : rédaction, CC, pièces jointes (FilePond), aide IA, envoi.
+ * Tiroir « Répondre à l'email » : rédaction, CC, liens, pièces jointes (FilePond), aide IA, envoi.
  * Ouvert par l'événement `compose-open` émis par la page ticket.
  * Après envoi, émet `ticket-updated` pour que la page recharge le ticket.
  * À la fermeture (annuler / croix / Échap / envoi), émet `compose-closed` : la page libère le verrou Socket.IO.
@@ -427,96 +427,125 @@ new class extends Component
 <div @compose-denied.window="$wire.set('showComposeDrawer', false)">
     @assets
     <link href="https://unpkg.com/filepond@^4/dist/filepond.min.css" rel="stylesheet" />
+    <link href="https://unpkg.com/filepond-plugin-image-preview@^4/dist/filepond-plugin-image-preview.min.css" rel="stylesheet" />
     <style>
-        .filepond--root { font-family: inherit; font-size: .875rem; margin-bottom: 0; }
-        .filepond--panel-root { background-color: rgb(161 161 170 / .12); border: 1px dashed rgb(161 161 170 / .5); }
-        .filepond--drop-label { color: rgb(113 113 122); }
+        /* FilePond compact : zone de dépôt d'une ligne, fichiers en grille sur 2 colonnes, aperçu des images */
+        .filepond--root { font-family: inherit; font-size: .75rem; margin-bottom: 0; }
+        .filepond--drop-label { min-height: 2.75em !important; color: rgb(113 113 122); }
+        .filepond--drop-label label { padding: .5em !important; cursor: pointer; }
         .dark .filepond--drop-label { color: rgb(161 161 170); }
+        .filepond--panel-root { background-color: transparent; border: 1px dashed rgb(161 161 170 / .55); border-radius: .5rem; }
         .filepond--label-action { text-decoration-color: rgb(99 102 241); color: rgb(79 70 229); }
-        .filepond--item-panel { background-color: rgb(99 102 241); }
+        .dark .filepond--label-action { color: rgb(165 180 252); }
+        .filepond--item { width: calc(50% - .5rem); }
+        @media (max-width: 480px) { .filepond--item { width: calc(100% - .5rem); } }
+        .filepond--item-panel { background-color: rgb(99 102 241); border-radius: .5rem; }
         [data-filepond-item-state='processing-complete'] .filepond--item-panel { background-color: rgb(16 185 129); }
         [data-filepond-item-state*='error'] .filepond--item-panel { background-color: rgb(239 68 68); }
+        .filepond--image-preview-wrapper { border-radius: .5rem; }
     </style>
-    <script src="https://unpkg.com/filepond@^4/dist/filepond.min.js"></script>
+    <script src="https://unpkg.com/filepond-plugin-image-preview@^4/dist/filepond-plugin-image-preview.min.js"></script>
     <script src="https://unpkg.com/filepond-plugin-file-validate-size@^2/dist/filepond-plugin-file-validate-size.min.js"></script>
     <script src="https://unpkg.com/filepond-plugin-file-validate-type@^1/dist/filepond-plugin-file-validate-type.min.js"></script>
+    <script src="https://unpkg.com/filepond@^4/dist/filepond.min.js"></script>
     @endassets
 
     @php
-        $fieldInput = 'min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:ring-0 read-only:text-zinc-600 dark:text-white dark:read-only:text-zinc-400';
-        $fieldLabel = 'w-14 shrink-0 text-sm font-medium text-zinc-500 dark:text-zinc-400';
-        $fieldRow   = 'flex items-center gap-3 border-b border-zinc-200 px-4 py-3 dark:border-white/10';
-        $linkBtn    = 'text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400';
+        // Champs « compose » : une ligne, étiquette discrète à gauche, pas de bordure de champ
+        $fieldRow   = 'flex items-center gap-3 border-b border-zinc-200 px-4 py-1.5 dark:border-white/10';
+        $fieldLabel = 'w-10 shrink-0 text-xs text-zinc-500 dark:text-zinc-400';
+        $fieldInput = 'min-w-0 flex-1 border-0 bg-transparent p-0 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 focus:ring-0 read-only:text-zinc-700 dark:text-white dark:read-only:text-zinc-300';
+        $miniBtn    = 'inline-flex items-center rounded-md px-1.5 py-1 text-xs font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white';
+        $toolBtn    = 'inline-flex size-8 items-center justify-center rounded-md text-base text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white';
+        $linkInput  = 'block w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-white/15 dark:bg-zinc-900 dark:text-white';
     @endphp
 
-    {{-- ========== Drawer extra-large : envoi mail ========== --}}
+    {{-- ========== Tiroir : réponse par email ========== --}}
     {{-- @close : filet de sécurité côté navigateur, libère le verrou même avant la synchro Livewire --}}
     <flux:modal
         wire:model.self="showComposeDrawer"
         variant="flyout"
         position="right"
-        class="w-full max-w-full p-0 md:w-[64rem]"
+        class="h-[80dvh] max-h-[80dvh] w-full max-w-full !p-0 md:w-[42rem]"
         @close="$dispatch('compose-closed')"
     >
-        <div class="relative flex h-full flex-col overflow-hidden">
+        <div class="relative flex h-[80dvh] max-h-[80dvh] flex-col overflow-hidden">
 
             {{-- En-tête --}}
-            <div class="shrink-0 border-b border-zinc-200 px-6 py-5 pe-14 dark:border-white/10">
-                <flux:heading size="lg">{{ __("Répondre à l'email") }}</flux:heading>
-                <flux:text class="mt-1">
-                    {{ __('Ticket') }} {{ $context['num_ticket'] ?? $ticketId }}
-                    @if (! empty($context['client_name'])) · {{ $context['client_name'] }} @endif
-                    · {{ (int) ($context['messages_count'] ?? 0) }} {{ __('message(s)') }}
-                </flux:text>
-            </div>
-
-            {{-- Corps défilant --}}
-            <div class="min-h-0 flex-1 overflow-y-auto">
-
-                {{-- À --}}
-                <div class="{{ $fieldRow }}">
-                    <span class="{{ $fieldLabel }}">{{ __('À') }}</span>
-
-                    <input
-                        type="email"
-                        wire:model="destinateur"
-                        placeholder="exemple@domaine.com"
-                        @if (! $editDestinataire) readonly @endif
-                        class="{{ $fieldInput }}"
-                    />
-
-                    <div class="flex shrink-0 items-center gap-3">
-                        @if (! $editDestinataire)
-                            <button type="button" wire:click="$set('editDestinataire', true)" class="{{ $linkBtn }}">{{ __('Modifier') }}</button>
-                        @else
-                            <button type="button" wire:click="$set('editDestinataire', false)" class="{{ $linkBtn }}">{{ __('Valider') }}</button>
-                            <button type="button" wire:click="resetDestinataire" class="text-xs font-medium text-zinc-500 hover:underline">{{ __('Annuler') }}</button>
-                        @endif
+            <div class="flex min-h-[3.25rem] shrink-0 items-center border-b border-zinc-200 bg-zinc-50 py-2 pe-12 ps-4 dark:border-white/10 dark:bg-white/5">
+                <div class="min-w-0">
+                    <div class="truncate text-sm font-semibold leading-tight text-zinc-900 dark:text-white">{{ __("Répondre à l'email") }}</div>
+                    <div class="truncate text-[11px] leading-tight text-zinc-500 dark:text-zinc-400">
+                        {{ __('Ticket') }} {{ $context['num_ticket'] ?? $ticketId }}
+                        @if (! empty($context['client_name'])) · {{ $context['client_name'] }} @endif
+                        · {{ (int) ($context['messages_count'] ?? 0) }} {{ __('message(s)') }}
                     </div>
                 </div>
+            </div>
 
-                {{-- Cc --}}
-                <div x-data="{ val: '' }" class="{{ $fieldRow }} items-start">
-                    <span class="{{ $fieldLabel }} pt-1">{{ __('Cc') }}</span>
+            {{-- Corps --}}
+            <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
 
-                    <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                        @foreach ($cc as $index => $email)
-                            <span wire:key="cc-{{ $index }}-{{ $email }}" class="inline-flex items-center gap-1 rounded-full bg-indigo-100/80 px-2.5 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-400/15 dark:text-indigo-300">
-                                {{ $email }}
-                                <button type="button" wire:click="removeCC({{ $index }})" class="flex items-center rounded-full p-0.5 hover:bg-indigo-200 dark:hover:bg-indigo-500/30" aria-label="{{ __('Retirer') }}">
-                                    <i class="hgi-stroke hgi-cancel-01" style="width:.75rem;height:.75rem;font-size:.75rem"></i>
-                                </button>
-                            </span>
-                        @endforeach
+                {{-- À + Cc (la ligne Cc est toujours affichée sous À) --}}
+                <div
+                    x-data="{
+                        val: '',
+                        commit() {
+                            this.val.split(/[,;\s]+/).filter(Boolean).forEach(e => this.$wire.addCC(e));
+                            this.val = '';
+                        },
+                    }"
+                >
+                    {{-- À --}}
+                    <div class="{{ $fieldRow }}">
+                        <span class="{{ $fieldLabel }}">{{ __('À') }}</span>
 
                         <input
                             type="email"
-                            x-model="val"
-                            @blur="if (val.trim() !== '') { $wire.addCC(val.trim()); val = '' }"
-                            @keydown.enter.prevent="if (val.trim() !== '') { $wire.addCC(val.trim()); val = '' }"
-                            placeholder="{{ __('Ajouter une adresse en copie…') }}"
-                            class="min-w-[180px] flex-1 border-0 bg-transparent p-1 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:ring-0 dark:text-white"
+                            wire:model="destinateur"
+                            placeholder="exemple@domaine.com"
+                            @if (! $editDestinataire) readonly @endif
+                            class="{{ $fieldInput }}"
                         />
+
+                        <div class="flex shrink-0 items-center gap-0.5">
+                            @if (! $editDestinataire)
+                                <button type="button" wire:click="$set('editDestinataire', true)" class="{{ $miniBtn }}" title="{{ __('Modifier le destinataire') }}" aria-label="{{ __('Modifier le destinataire') }}">
+                                    <i class="iconoir-edit-pencil" aria-hidden="true"></i>
+                                </button>
+                            @else
+                                <button type="button" wire:click="$set('editDestinataire', false)" class="{{ $miniBtn }} !text-indigo-600 dark:!text-indigo-400">{{ __('Valider') }}</button>
+                                <button type="button" wire:click="resetDestinataire" class="{{ $miniBtn }}">{{ __('Annuler') }}</button>
+                            @endif
+                        </div>
+                    </div>
+
+                    {{-- Cc (toujours visible, juste sous À) --}}
+                    <div class="{{ $fieldRow }} items-start">
+                        <span class="{{ $fieldLabel }} pt-1">{{ __('Cc') }}</span>
+
+                        <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+                            @foreach ($cc as $index => $email)
+                                <span wire:key="cc-{{ $index }}-{{ $email }}" class="inline-flex items-center gap-1 rounded-md bg-zinc-100 py-0.5 pe-1 ps-2 text-xs text-zinc-700 dark:bg-white/10 dark:text-zinc-200">
+                                    {{ $email }}
+                                    <button type="button" wire:click="removeCC({{ $index }})" class="flex items-center rounded p-0.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:hover:bg-white/15 dark:hover:text-white" aria-label="{{ __('Retirer') }}">
+                                        <i class="iconoir-xmark text-[11px]" aria-hidden="true"></i>
+                                    </button>
+                                </span>
+                            @endforeach
+
+                            <input
+                                type="email"
+                                x-model="val"
+                                @blur="commit()"
+                                @keydown.enter.prevent="commit()"
+                                @keydown.comma.prevent="commit()"
+                                @keydown.semicolon.prevent="commit()"
+                                @keydown.space.prevent="commit()"
+                                placeholder="{{ __('Ajouter une adresse en copie…') }}"
+                                class="min-w-[160px] flex-1 border-0 bg-transparent p-0.5 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 focus:ring-0 dark:text-white"
+                            />
+                        </div>
                     </div>
                 </div>
 
@@ -531,153 +560,274 @@ new class extends Component
                         class="{{ $fieldInput }} font-medium"
                     />
 
-                    <div class="flex shrink-0 items-center gap-3">
+                    <div class="flex shrink-0 items-center gap-0.5">
                         @if (! $editSubject)
-                            <button type="button" wire:click="$set('editSubject', true)" class="{{ $linkBtn }}">{{ __('Modifier') }}</button>
+                            <button type="button" wire:click="$set('editSubject', true)" class="{{ $miniBtn }}" title="{{ __("Modifier l'objet") }}" aria-label="{{ __("Modifier l'objet") }}">
+                                <i class="iconoir-edit-pencil" aria-hidden="true"></i>
+                            </button>
                         @else
-                            <button type="button" wire:click="$set('editSubject', false)" class="{{ $linkBtn }}">{{ __('Valider') }}</button>
-                            <button type="button" wire:click="resetSubject" class="text-xs font-medium text-zinc-500 hover:underline">{{ __('Annuler') }}</button>
+                            <button type="button" wire:click="$set('editSubject', false)" class="{{ $miniBtn }} !text-indigo-600 dark:!text-indigo-400">{{ __('Valider') }}</button>
+                            <button type="button" wire:click="resetSubject" class="{{ $miniBtn }}">{{ __('Annuler') }}</button>
                         @endif
                     </div>
                 </div>
 
-                {{-- Message original du client (repliable) --}}
+                {{-- Éditeur : occupe tout l'espace restant. Ctrl/⌘ + Entrée ouvre la confirmation d'envoi.
+                     `insert-text` (émis par le bouton « Lien ») insère le texte à la position du curseur. --}}
+                <textarea
+                    x-data="{
+                        insert(text) {
+                            const el = $el;
+                            const start = el.selectionStart ?? el.value.length;
+                            const end = el.selectionEnd ?? start;
+                            el.setRangeText(text, start, end, 'end');
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.focus();
+                        },
+                    }"
+                    @insert-text.window="insert($event.detail)"
+                    wire:model="message_txt"
+                    placeholder="{{ __('Rédigez votre réponse au client…') }}"
+                    @keydown.ctrl.enter.prevent="$wire.set('showSendModal', true)"
+                    @keydown.meta.enter.prevent="$wire.set('showSendModal', true)"
+                    class="block min-h-[14rem] w-full flex-1 resize-none border-0 bg-transparent px-4 py-3 text-sm leading-relaxed text-zinc-900 outline-none placeholder:text-zinc-400 focus:ring-0 dark:text-white"
+                ></textarea>
+
+                {{-- Message original du client : citation repliée sous l'éditeur --}}
                 @if ($message_client !== '')
-                    <div x-data="{ open: false }" class="border-b border-zinc-200 dark:border-white/10">
+                    <div x-data="{ open: false }" class="shrink-0 px-4 pb-3">
                         <button
                             type="button"
                             @click="open = ! open"
-                            class="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs font-medium text-zinc-500 transition hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-white/5"
+                            class="inline-flex items-center gap-1.5 rounded-md bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-800 dark:bg-white/10 dark:text-zinc-400 dark:hover:bg-white/15 dark:hover:text-white"
+                            :aria-expanded="open"
                         >
-                            <i class="hgi-stroke hgi-message-01"></i>
-                            <span>{{ __('Message original du client') }}</span>
-                            <span class="ml-auto flex items-center transition" :class="open && 'rotate-180'">
-                                <i class="hgi-stroke hgi-arrow-down-01"></i>
-                            </span>
+                            <i class="iconoir-more-horiz" aria-hidden="true"></i>
+                            <span x-text="open ? '{{ __('Masquer le message original') }}' : '{{ __('Message original du client') }}'"></span>
                         </button>
 
                         <div x-show="open" x-collapse x-cloak>
-                            <div class="mx-4 mb-3 max-h-40 overflow-y-auto whitespace-pre-line break-words border-l-2 border-sky-400 pl-3 text-sm text-zinc-500 dark:text-zinc-400">
+                            <div class="mt-2 max-h-32 overflow-y-auto whitespace-pre-line break-words border-l-2 border-zinc-300 ps-3 text-[13px] text-zinc-500 dark:border-white/20 dark:text-zinc-400">
                                 {{ \Illuminate\Support\Str::limit($message_client, 600) }}
                             </div>
                         </div>
                     </div>
                 @endif
-
-                {{-- Éditeur --}}
-                <textarea
-                    wire:model="message_txt"
-                    rows="16"
-                    placeholder="{{ __('Rédigez votre réponse au client…') }}"
-                    class="block w-full resize-y border-0 bg-transparent px-4 py-4 text-sm leading-relaxed text-zinc-900 outline-none placeholder:text-zinc-400 focus:ring-0 dark:text-white"
-                ></textarea>
-
-                {{-- Pièces jointes (FilePond) --}}
-                <div
-                    wire:ignore
-                    x-data="{
-                        pond: null,
-                        async init() {
-                            const wire = this.$wire;
-
-                            while (! (window.FilePond && window.FilePondPluginFileValidateSize && window.FilePondPluginFileValidateType)) {
-                                await new Promise(resolve => setTimeout(resolve, 50));
-                            }
-
-                            FilePond.registerPlugin(FilePondPluginFileValidateSize, FilePondPluginFileValidateType);
-
-                            this.pond = FilePond.create(this.$refs.input, {
-                                allowMultiple: true,
-                                maxParallelUploads: 1,
-                                maxFileSize: '5MB',
-                                credits: false,
-                                acceptedFileTypes: ['image/*', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-                                labelIdle: 'Glissez vos fichiers ici ou <span class=\'filepond--label-action\'>parcourir</span>',
-                                labelFileProcessing: 'Téléversement',
-                                labelFileProcessingComplete: 'Téléversé',
-                                labelFileProcessingAborted: 'Annulé',
-                                labelFileProcessingError: 'Erreur de téléversement',
-                                labelFileLoading: 'Chargement',
-                                labelTapToCancel: 'cliquer pour annuler',
-                                labelTapToRetry: 'cliquer pour réessayer',
-                                labelTapToUndo: 'cliquer pour retirer',
-                                labelButtonRemoveItem: 'Retirer',
-                                labelButtonAbortItemLoad: 'Annuler',
-                                labelButtonAbortItemProcessing: 'Annuler',
-                                labelButtonRetryItemProcessing: 'Réessayer',
-                                labelButtonProcessItem: 'Téléverser',
-                                labelFileTypeNotAllowed: 'Type de fichier non autorisé',
-                                fileValidateTypeLabelExpectedTypes: 'Images, PDF ou Word',
-                                labelMaxFileSizeExceeded: 'Fichier trop volumineux',
-                                labelMaxFileSize: 'Taille max : {filesize}',
-                                server: {
-                                    process: (fieldName, file, metadata, load, error, progress, abort) => {
-                                        wire.upload(
-                                            'pendingFile',
-                                            file,
-                                            (uploadedFilename) => load(uploadedFilename),
-                                            () => error('Échec du téléversement'),
-                                            (event) => progress(true, event.detail.progress, 100),
-                                        );
-
-                                        return {
-                                            abort: () => {
-                                                wire.cancelUpload('pendingFile');
-                                                abort();
-                                            },
-                                        };
-                                    },
-                                    revert: (uniqueFileId, load, error) => {
-                                        wire.removeAttachment(uniqueFileId).then(load).catch(() => error('Suppression impossible'));
-                                    },
-                                },
-                            });
-                        },
-                        destroy() {
-                            this.pond?.destroy();
-                        },
-                    }"
-                    @attachments-cleared.window="pond?.removeFiles()"
-                    class="border-t border-zinc-200 bg-zinc-50 px-4 py-4 dark:border-white/10 dark:bg-white/5"
-                >
-                    <input type="file" x-ref="input" multiple />
-
-                    <p class="mt-2 text-xs text-zinc-400">{{ __('Images, PDF, Word — 5 Mo max par fichier') }}</p>
-                </div>
             </div>
 
-            {{-- Pied fixe : actions --}}
-            <div class="flex shrink-0 flex-wrap items-center gap-2 border-t border-zinc-200 bg-white px-6 py-4 dark:border-white/10 dark:bg-zinc-800">
-                <flux:modal.close>
-                    <flux:button variant="danger">
-                        <span class="flex items-center gap-2">
-                            <span>{{ __('Annuler') }}</span>
-                        </span>
-                    </flux:button>
-                </flux:modal.close>
+            {{-- Pièces jointes (FilePond) : zone compacte, aperçu des images, le trombone du pied ouvre le sélecteur --}}
+            <div
+                wire:ignore
+                x-data="{
+                    pond: null,
+                    async init() {
+                        const wire = this.$wire;
+
+                        while (! (window.FilePond && window.FilePondPluginFileValidateSize && window.FilePondPluginFileValidateType && window.FilePondPluginImagePreview)) {
+                            await new Promise(resolve => setTimeout(resolve, 50));
+                        }
+
+                        FilePond.registerPlugin(FilePondPluginFileValidateSize, FilePondPluginFileValidateType, FilePondPluginImagePreview);
+
+                        this.pond = FilePond.create(this.$refs.input, {
+                            allowMultiple: true,
+                            maxParallelUploads: 1,
+                            maxFileSize: '5MB',
+                            credits: false,
+                            acceptedFileTypes: ['image/*', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+
+                            // Aperçu uniquement pour les images (les autres fichiers restent en pastille)
+                            allowImagePreview: true,
+                            imagePreviewHeight: 80,
+                            imagePreviewMinHeight: 40,
+                            imagePreviewMaxHeight: 96,
+                            imagePreviewMaxFileSize: '5MB',
+                            imagePreviewTransparencyIndicator: 'grid',
+
+                            labelIdle: 'Glissez vos fichiers ici ou <span class=\'filepond--label-action\'>parcourir</span> · Images, PDF, Word · 5 Mo max',
+                            labelFileProcessing: 'Téléversement',
+                            labelFileProcessingComplete: 'Téléversé',
+                            labelFileProcessingAborted: 'Annulé',
+                            labelFileProcessingError: 'Erreur de téléversement',
+                            labelFileLoading: 'Chargement',
+                            labelTapToCancel: 'cliquer pour annuler',
+                            labelTapToRetry: 'cliquer pour réessayer',
+                            labelTapToUndo: 'cliquer pour retirer',
+                            labelButtonRemoveItem: 'Retirer',
+                            labelButtonAbortItemLoad: 'Annuler',
+                            labelButtonAbortItemProcessing: 'Annuler',
+                            labelButtonRetryItemProcessing: 'Réessayer',
+                            labelButtonProcessItem: 'Téléverser',
+                            labelFileTypeNotAllowed: 'Type de fichier non autorisé',
+                            fileValidateTypeLabelExpectedTypes: 'Images, PDF ou Word',
+                            labelMaxFileSizeExceeded: 'Fichier trop volumineux',
+                            labelMaxFileSize: 'Taille max : {filesize}',
+                            server: {
+                                process: (fieldName, file, metadata, load, error, progress, abort) => {
+                                    wire.upload(
+                                        'pendingFile',
+                                        file,
+                                        (uploadedFilename) => load(uploadedFilename),
+                                        () => error('Échec du téléversement'),
+                                        (event) => progress(true, event.detail.progress, 100),
+                                    );
+
+                                    return {
+                                        abort: () => {
+                                            wire.cancelUpload('pendingFile');
+                                            abort();
+                                        },
+                                    };
+                                },
+                                revert: (uniqueFileId, load, error) => {
+                                    wire.removeAttachment(uniqueFileId).then(load).catch(() => error('Suppression impossible'));
+                                },
+                            },
+                        });
+                    },
+                    destroy() {
+                        this.pond?.destroy();
+                    },
+                }"
+                @attachments-cleared.window="pond?.removeFiles()"
+                @attach-browse.window="pond?.browse()"
+                class="max-h-56 shrink-0 overflow-y-auto border-t border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-white/10 dark:bg-white/5"
+            >
+                <input type="file" x-ref="input" multiple />
+            </div>
+
+            {{-- Pied : envoi à gauche, outils au centre, abandon à droite (comme une fenêtre de rédaction) --}}
+            <div class="flex shrink-0 items-center gap-1 border-t border-zinc-200 bg-white px-3 py-2 dark:border-white/10 dark:bg-zinc-800">
+                <flux:button size="sm" variant="primary" color="green" wire:click="$set('showSendModal', true)">
+                    <span class="flex items-center gap-1.5">
+                        <i class="iconoir-send" aria-hidden="true"></i>
+                        <span>{{ __('Envoyer') }}</span>
+                    </span>
+                </flux:button>
+
+                <span class="mx-1 h-5 w-px bg-zinc-200 dark:bg-white/10" aria-hidden="true"></span>
+
+                <button type="button" @click="$dispatch('attach-browse')" class="{{ $toolBtn }}" title="{{ __('Joindre des fichiers') }}" aria-label="{{ __('Joindre des fichiers') }}">
+                    <i class="iconoir-attachment" aria-hidden="true"></i>
+                </button>
+
+                {{-- Insérer un lien : le texte du lien (facultatif) et l'adresse sont insérés à la position du curseur --}}
+                <div
+                    class="relative"
+                    x-data="{
+                        open: false,
+                        url: '',
+                        label: '',
+                        error: '',
+                        toggle() {
+                            this.open = ! this.open;
+                            this.error = '';
+                            if (this.open) this.$nextTick(() => this.$refs.url.focus());
+                        },
+                        submit() {
+                            let raw = this.url.trim();
+
+                            if (raw === '') { this.error = 'Saisissez une adresse.'; return; }
+
+                            // Sans protocole : adresse email -> mailto:, sinon https://
+                            if (! /^[a-z][a-z0-9+.-]*:/i.test(raw)) {
+                                raw = (raw.includes('@') && ! raw.includes('/') ? 'mailto:' : 'https://') + raw;
+                            }
+
+                            let parsed;
+                            try { parsed = new URL(raw); } catch (e) { this.error = 'Adresse invalide.'; return; }
+
+                            if (! ['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
+                                this.error = 'Seuls les liens http, https et mailto sont autorisés.';
+                                return;
+                            }
+
+                            const target = parsed.protocol === 'mailto:' ? parsed.pathname : raw;
+                            const label = this.label.trim();
+
+                            this.$dispatch('insert-text', label !== '' ? label + ' (' + target + ')' : target);
+
+                            this.url = '';
+                            this.label = '';
+                            this.error = '';
+                            this.open = false;
+                        },
+                    }"
+                    @click.outside="open = false"
+                >
+                    <button type="button" @click="toggle()" class="{{ $toolBtn }}" :class="open && 'bg-zinc-100 dark:bg-white/10'" title="{{ __('Insérer un lien') }}" aria-label="{{ __('Insérer un lien') }}" :aria-expanded="open">
+                        <i class="iconoir-link" aria-hidden="true"></i>
+                    </button>
+
+                    <div
+                        x-show="open"
+                        x-cloak
+                        x-transition.opacity.duration.150ms
+                        @keydown.escape.stop="open = false"
+                        role="dialog"
+                        aria-label="{{ __('Insérer un lien') }}"
+                        class="absolute bottom-full left-0 z-30 mb-2 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-white/10 dark:bg-zinc-800"
+                    >
+                        <div class="mb-2 text-xs font-semibold text-zinc-900 dark:text-white">{{ __('Insérer un lien') }}</div>
+
+                        <div class="space-y-2">
+                            <div>
+                                <label class="mb-0.5 block text-[11px] text-zinc-500 dark:text-zinc-400" for="compose-link-url">{{ __('Adresse (URL)') }}</label>
+                                <input
+                                    id="compose-link-url"
+                                    type="text"
+                                    x-ref="url"
+                                    x-model="url"
+                                    @keydown.enter.prevent="submit()"
+                                    @input="error = ''"
+                                    placeholder="https://exemple.com/page"
+                                    class="{{ $linkInput }}"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="mb-0.5 block text-[11px] text-zinc-500 dark:text-zinc-400" for="compose-link-label">{{ __('Texte du lien (facultatif)') }}</label>
+                                <input
+                                    id="compose-link-label"
+                                    type="text"
+                                    x-model="label"
+                                    @keydown.enter.prevent="submit()"
+                                    placeholder="{{ __('Ex. : Suivre ma commande') }}"
+                                    class="{{ $linkInput }}"
+                                />
+                            </div>
+
+                            <p x-show="error" x-text="error" x-cloak class="text-xs text-red-600 dark:text-red-400" role="alert"></p>
+                        </div>
+
+                        <div class="mt-3 flex items-center justify-end gap-2">
+                            <button type="button" @click="open = false" class="{{ $miniBtn }}">{{ __('Annuler') }}</button>
+                            <button type="button" @click="submit()" class="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
+                                {{ __('Insérer') }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="button" wire:click="correctionOpenAI" wire:loading.attr="disabled" wire:target="correctionOpenAI" class="{{ $toolBtn }}" title="{{ __('Suggestion : corriger et améliorer le texte') }}" aria-label="{{ __('Suggestion') }}">
+                    <i class="iconoir-magic-wand" wire:loading.remove wire:target="correctionOpenAI" aria-hidden="true"></i>
+                    <i class="iconoir-refresh animate-spin" wire:loading wire:target="correctionOpenAI" aria-hidden="true"></i>
+                </button>
+
+                <button type="button" wire:click="translateOpenAI" wire:loading.attr="disabled" wire:target="translateOpenAI" class="{{ $toolBtn }}" title="{{ __('Traduire dans la langue du client') }}" aria-label="{{ __('Traduire') }}">
+                    <i class="iconoir-language" wire:loading.remove wire:target="translateOpenAI" aria-hidden="true"></i>
+                    <i class="iconoir-refresh animate-spin" wire:loading wire:target="translateOpenAI" aria-hidden="true"></i>
+                </button>
 
                 <flux:spacer />
 
-                <flux:button wire:click="correctionOpenAI" wire:loading.attr="disabled" wire:target="correctionOpenAI">
-                    <span class="flex items-center gap-2">
-                        <i class="hgi-stroke hgi-magic-wand-01"></i>
-                        <span>{{ __('Suggestion') }}</span>
-                    </span>
-                </flux:button>
+                <span class="hidden text-[11px] text-zinc-400 sm:inline">{{ __('Ctrl + Entrée pour envoyer') }}</span>
 
-                <flux:button wire:click="translateOpenAI" wire:loading.attr="disabled" wire:target="translateOpenAI">
-                    <span class="flex items-center gap-2">
-                        <i class="hgi-stroke hgi-translate"></i>
-                        <span>{{ __('Traduire') }}</span>
-                    </span>
-                </flux:button>
-
-                <flux:button variant="primary" color="green" wire:click="$set('showSendModal', true)">
-                    <span class="flex items-center gap-2">
-                        <i class="hgi-stroke hgi-sent"></i>
-                        <span>{{ __('Envoyer la réponse') }}</span>
-                    </span>
-                </flux:button>
+                <flux:modal.close>
+                    <button type="button" class="{{ $toolBtn }} hover:!text-red-600 dark:hover:!text-red-400" title="{{ __('Abandonner le brouillon') }}" aria-label="{{ __('Abandonner le brouillon') }}">
+                        <i class="iconoir-trash" aria-hidden="true"></i>
+                    </button>
+                </flux:modal.close>
             </div>
 
             {{-- Confirmation d'envoi : bandeau qui monte depuis le bas du tiroir --}}
@@ -693,26 +843,28 @@ new class extends Component
                 role="alertdialog"
                 aria-live="assertive"
                 aria-label="{{ __("Confirmer l'envoi") }}"
-                class="absolute inset-x-0 bottom-0 z-20 border-t border-zinc-200 bg-white px-6 py-4 shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.25)] dark:border-white/10 dark:bg-zinc-800"
+                class="absolute inset-x-0 bottom-0 z-20 border-t border-zinc-200 bg-white px-4 py-2.5 shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.25)] dark:border-white/10 dark:bg-zinc-800"
             >
-                <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
                     <div class="min-w-0 flex-1">
                         <div class="text-sm font-semibold text-zinc-900 dark:text-white">{{ __("Confirmer l'envoi ?") }}</div>
-                        <div class="mt-0.5 break-words text-sm text-zinc-500 dark:text-zinc-400">
+                        <div class="break-words text-xs text-zinc-500 dark:text-zinc-400">
                             {{ __("L'email sera envoyé à") }}
-                            <strong class="text-zinc-700 dark:text-zinc-200">{{ $destinateur }}</strong>@if (! empty($photos)), {{ __('avec') }} <strong class="text-zinc-700 dark:text-zinc-200">{{ count($photos) }} {{ __('pièce(s) jointe(s)') }}</strong>@endif.
+                            <strong class="text-zinc-700 dark:text-zinc-200">{{ $destinateur }}</strong>@if (! empty($cc)), {{ __('en copie :') }} <strong class="text-zinc-700 dark:text-zinc-200">{{ implode(', ', $cc) }}</strong>@endif @if (! empty($photos))· {{ __('avec') }} <strong class="text-zinc-700 dark:text-zinc-200">{{ count($photos) }} {{ __('pièce(s) jointe(s)') }}</strong>@endif.
                         </div>
                     </div>
 
                     <div class="flex shrink-0 items-center gap-2">
-                        <flux:button variant="danger" wire:click="$set('showSendModal', false)" wire:loading.attr="disabled" wire:target="reply">
-                            {{ __('Annuler') }}
+                        <flux:button size="sm" wire:click="$set('showSendModal', false)" wire:loading.attr="disabled" wire:target="reply">
+                            {{ __('Revenir') }}
                         </flux:button>
 
-                        <flux:button variant="primary" color="green" wire:click="reply" wire:loading.attr="disabled" wire:target="reply">
-                            <span class="flex items-center gap-2">
-                                <i class="hgi-stroke hgi-sent"></i>
-                                <span>{{ __('Envoyer maintenant') }}</span>
+                        <flux:button size="sm" variant="primary" color="green" wire:click="reply" wire:loading.attr="disabled" wire:target="reply">
+                            <span class="flex items-center gap-1.5">
+                                <i class="iconoir-send" wire:loading.remove wire:target="reply" aria-hidden="true"></i>
+                                <i class="iconoir-refresh animate-spin" wire:loading wire:target="reply" aria-hidden="true"></i>
+                                <span wire:loading.remove wire:target="reply">{{ __('Envoyer maintenant') }}</span>
+                                <span wire:loading wire:target="reply">{{ __('Envoi en cours…') }}</span>
                             </span>
                         </flux:button>
                     </div>
