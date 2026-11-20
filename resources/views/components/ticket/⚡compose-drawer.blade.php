@@ -179,6 +179,7 @@ new class extends Component
 
     /* ----------------------------- IA ------------------------------- */
 
+    /** Traduit le message dans la langue du client */
     public function translateOpenAI(): void
     {
         if (trim($this->message_txt) === '') {
@@ -194,42 +195,103 @@ new class extends Component
         }
 
         try {
-            $api = app(CosmiaApi::class);
-
-            $current = $api->post('/openai/detectlanguageiso', ['text' => $this->message_txt])['langue'] ?? null;
-
-            if (! $current) {
-                $this->notify(__('Impossible de détecter la langue'), 'danger');
-
-                return;
-            }
-
-            $target = $api->post('/openai/detectlanguageiso', ['text' => $this->message_client])['langue'] ?? 'en';
-
-            if ($current === $target) {
-                $this->notify(__('Le message est déjà dans la langue du client'), 'info');
-
-                return;
-            }
-
-            $translated = $api->post('/openai/translateandcorrect', [
-                'text'   => $this->message_txt,
-                'target' => $target,
-            ])['translated_text'] ?? null;
+            $api    = app(CosmiaApi::class);
+            $target = $this->clientLanguage($api);
+            $result = $this->translateField($api, $this->message_txt, $target);
         } catch (\RuntimeException $e) {
             $this->notify(__('Erreur lors de la traduction : ').$e->getMessage(), 'danger');
 
             return;
         }
 
-        if (empty($translated)) {
-            $this->notify(__('La traduction a échoué'), 'danger');
+        match ($result['status']) {
+            'undetected' => $this->notify(__('Impossible de détecter la langue'), 'danger'),
+            'same'       => $this->notify(__('Le message est déjà dans la langue du client'), 'info'),
+            'failed'     => $this->notify(__('La traduction a échoué'), 'danger'),
+            'ok'         => $this->applyTranslatedMessage($result['text'], $result['from'], $target),
+        };
+    }
+
+    /** Traduit l'objet dans la langue du client (bouton sous le champ Objet) */
+    public function translateSubjectOpenAI(): void
+    {
+        if (trim($this->subject) === '') {
+            $this->notify(__("Veuillez saisir un objet avant de le traduire"), 'danger');
 
             return;
         }
 
+        if (trim($this->message_client) === '') {
+            $this->notify(__('Message client introuvable'), 'danger');
+
+            return;
+        }
+
+        try {
+            $api    = app(CosmiaApi::class);
+            $target = $this->clientLanguage($api);
+            $result = $this->translateField($api, $this->subject, $target);
+        } catch (\RuntimeException $e) {
+            $this->notify(__("Erreur lors de la traduction de l'objet : ").$e->getMessage(), 'danger');
+
+            return;
+        }
+
+        match ($result['status']) {
+            'undetected' => $this->notify(__("Impossible de détecter la langue de l'objet"), 'danger'),
+            'same'       => $this->notify(__("L'objet est déjà dans la langue du client"), 'info'),
+            'failed'     => $this->notify(__("La traduction de l'objet a échoué"), 'danger'),
+            'ok'         => $this->applyTranslatedSubject($result['text'], $result['from'], $target),
+        };
+    }
+
+    /** Langue cible = langue du message du client */
+    private function clientLanguage(CosmiaApi $api): string
+    {
+        return $api->post('/openai/detectlanguageiso', ['text' => $this->message_client])['langue'] ?? 'en';
+    }
+
+    /**
+     * Détecte la langue d'un texte puis le traduit vers $target.
+     *
+     * @return array{status: string, from?: string, text?: string}
+     *         status : undetected | same | failed | ok
+     */
+    private function translateField(CosmiaApi $api, string $text, string $target): array
+    {
+        $from = $api->post('/openai/detectlanguageiso', ['text' => $text])['langue'] ?? null;
+
+        if (! $from) {
+            return ['status' => 'undetected'];
+        }
+
+        if ($from === $target) {
+            return ['status' => 'same', 'from' => $from];
+        }
+
+        $translated = $api->post('/openai/translateandcorrect', [
+            'text'   => $text,
+            'target' => $target,
+        ])['translated_text'] ?? null;
+
+        if (empty($translated)) {
+            return ['status' => 'failed'];
+        }
+
+        return ['status' => 'ok', 'from' => $from, 'text' => $translated];
+    }
+
+    private function applyTranslatedMessage(string $translated, string $from, string $to): void
+    {
         $this->message_txt = $translated;
-        $this->notify(__('Message traduit de :from vers :to', ['from' => $current, 'to' => $target]));
+        $this->notify(__('Message traduit de :from vers :to', ['from' => $from, 'to' => $to]));
+    }
+
+    private function applyTranslatedSubject(string $translated, string $from, string $to): void
+    {
+        // On retire les retours à la ligne éventuels : un objet tient sur une seule ligne
+        $this->subject = trim(preg_replace('/\s+/', ' ', $translated));
+        $this->notify(__("Objet traduit de :from vers :to", ['from' => $from, 'to' => $to]));
     }
 
     public function correctionOpenAI(): void
@@ -570,6 +632,23 @@ new class extends Component
                             <button type="button" wire:click="resetSubject" class="{{ $miniBtn }}">{{ __('Annuler') }}</button>
                         @endif
                     </div>
+                </div>
+
+                {{-- Traduire l'objet : bouton placé juste sous le champ Objet (aligné avec le champ), texte en violet --}}
+                <div class="flex items-center border-b border-zinc-200 py-1 pe-4 ps-[4.25rem] dark:border-white/10">
+                    <button
+                        type="button"
+                        wire:click="translateSubjectOpenAI"
+                        wire:loading.attr="disabled"
+                        wire:target="translateSubjectOpenAI"
+                        class="{{ $miniBtn }} gap-1.5 disabled:opacity-50 !text-purple-600 hover:!text-purple-700 dark:!text-purple-400 dark:hover:!text-purple-300"
+                        title="{{ __("Traduire l'objet dans la langue du client") }}"
+                    >
+                        <i class="iconoir-language" wire:loading.remove wire:target="translateSubjectOpenAI" aria-hidden="true"></i>
+                        <i class="iconoir-refresh animate-spin" wire:loading wire:target="translateSubjectOpenAI" aria-hidden="true"></i>
+                        <span wire:loading.remove wire:target="translateSubjectOpenAI">{{ __("Traduire l'objet") }}</span>
+                        <span wire:loading wire:target="translateSubjectOpenAI">{{ __('Traduction…') }}</span>
+                    </button>
                 </div>
 
                 {{-- Éditeur : occupe tout l'espace restant. Ctrl/⌘ + Entrée ouvre la confirmation d'envoi.
