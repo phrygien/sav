@@ -326,6 +326,16 @@ new class extends Component
 };
 ?>
 
+@php
+    // ── Style de carte (même rendu que la page ticket et le tiroir de réponse) ──
+    $card      = 'overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 dark:border-white/10 dark:bg-zinc-900';
+    $cardHead  = 'px-4 py-3';
+    $cardTitle = 'text-sm font-semibold text-zinc-900 dark:text-white';
+    $cardDesc  = 'mt-0.5 text-xs text-zinc-500 dark:text-zinc-400';
+    $panel     = 'mx-1 mb-1 overflow-hidden rounded-xl border border-zinc-300/70 bg-white dark:border-white/10 dark:bg-zinc-800';
+    $divide    = 'divide-y divide-zinc-200/70 dark:divide-white/10';
+@endphp
+
 <div wire:init="loadTickets">
 
     {{-- Bouton toujours visible --}}
@@ -347,19 +357,25 @@ new class extends Component
 
     {{-- Drawer --}}
     <flux:modal :name="'group-tickets-'.$ticketId" variant="flyout" class="w-full max-w-md">
-        <div class="flex h-full flex-col gap-5">
+        <div class="flex h-full flex-col gap-4">
 
             <div>
-                <flux:heading size="lg">Tickets associés</flux:heading>
-                <flux:text class="mt-1">Autres tickets liés à la même demande.</flux:text>
+                <flux:heading size="lg" class="text-blue-600 dark:text-blue-400">Tickets associés</flux:heading>
+                <flux:text class="mt-1 text-blue-500/80 dark:text-blue-300/80">Autres tickets liés à la même demande.</flux:text>
             </div>
 
             @if (! $loaded)
+                {{-- Squelettes au style des cartes --}}
                 <div class="space-y-3">
                     @foreach (range(1, 4) as $i)
-                        <div class="animate-pulse space-y-2 rounded-lg border border-zinc-200 p-3 dark:border-white/10">
-                            <div class="h-4 w-32 rounded bg-zinc-200 dark:bg-white/10"></div>
-                            <div class="h-3 w-24 rounded bg-zinc-200 dark:bg-white/10"></div>
+                        <div class="{{ $card }} animate-pulse">
+                            <div class="{{ $cardHead }} space-y-2">
+                                <div class="h-4 w-32 rounded bg-zinc-200 dark:bg-white/10"></div>
+                                <div class="h-3 w-20 rounded bg-zinc-200 dark:bg-white/10"></div>
+                            </div>
+                            <div class="{{ $panel }} px-4 py-3">
+                                <div class="h-5 w-40 rounded bg-zinc-200 dark:bg-white/10"></div>
+                            </div>
                         </div>
                     @endforeach
                 </div>
@@ -378,10 +394,20 @@ new class extends Component
                 </flux:callout>
 
             @elseif (empty($this->others))
-                <div class="flex flex-1 flex-col items-center justify-center gap-2 py-10 text-center">
-                    <flux:icon.inbox class="size-8 text-zinc-300 dark:text-zinc-600" />
-                    <flux:heading>Aucun autre ticket associé</flux:heading>
-                    <flux:text size="sm">Ce ticket n'est lié à aucun autre ticket.</flux:text>
+                {{-- État vide : carte grise + panneau blanc, comme « No invoices yet » --}}
+                <div class="{{ $card }}">
+                    <div class="{{ $cardHead }}">
+                        <div class="{{ $cardTitle }}">Tickets associés</div>
+                        <div class="{{ $cardDesc }}">Autres tickets liés à la même demande.</div>
+                    </div>
+
+                    <div class="{{ $panel }}">
+                        <div class="flex flex-col items-center gap-1 px-4 py-8 text-center">
+                            <flux:icon.inbox class="size-7 text-zinc-300 dark:text-zinc-600" />
+                            <div class="text-sm font-semibold text-zinc-900 dark:text-white">Aucun autre ticket associé</div>
+                            <div class="text-xs text-zinc-400 dark:text-zinc-500">Ce ticket n'est lié à aucun autre ticket.</div>
+                        </div>
+                    </div>
                 </div>
 
             @else
@@ -395,7 +421,7 @@ new class extends Component
                 @endif
 
                 {{-- Compteur + action « tout clôturer » --}}
-                <div class="-mb-2 flex items-center justify-between gap-2">
+                <div class="-mb-1 flex items-center justify-between gap-2">
                     <flux:text size="sm">
                         {{ count($this->filtered) }} ticket{{ count($this->filtered) > 1 ? 's' : '' }}
                     </flux:text>
@@ -416,7 +442,7 @@ new class extends Component
                     @endif
                 </div>
 
-                <ul class="-mx-2 flex-1 space-y-2 overflow-y-auto px-2">
+                <ul class="-mx-2 flex-1 space-y-3 overflow-y-auto px-2">
                     @forelse ($this->filtered as $ticket)
                         @php
                             $label    = self::LABELS[$ticket['label_id'] ?? 0] ?? ['text' => 'Inconnu', 'color' => 'zinc'];
@@ -427,38 +453,17 @@ new class extends Component
                         @endphp
 
                         <li wire:key="group-ticket-{{ $ticket['id'] }}">
-                            <div class="group rounded-lg border border-zinc-200 transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-white/10 dark:hover:border-white/20 dark:hover:bg-white/5">
+                            <div class="{{ $card }}">
 
-                                {{-- Lien vers le ticket --}}
+                                {{-- En-tête cliquable : n° du ticket + id, lien vers le ticket --}}
                                 <a
                                     href="{{ route('kanban.details', ['ticket' => $ticket['id']]) }}"
                                     wire:navigate
-                                    class="flex items-center gap-3 p-3"
+                                    class="group flex items-center justify-between gap-3 {{ $cardHead }} transition hover:bg-zinc-100/70 dark:hover:bg-white/5"
                                 >
-                                    <div class="min-w-0 flex-1 space-y-1.5">
-                                        <div class="flex items-baseline justify-between gap-2">
-                                            <flux:heading class="truncate">{{ $ticket['num_ticket'] ?? '—' }}</flux:heading>
-                                            <span class="shrink-0 font-mono text-xs text-zinc-400">#{{ $ticket['id'] }}</span>
-                                        </div>
-
-                                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-                                            <flux:badge size="sm" :color="$label['color']">{{ $label['text'] }}</flux:badge>
-
-                                            @if ($closed)
-                                                <flux:badge size="sm" color="green" icon="check-circle">Clôturé</flux:badge>
-                                            @elseif (isset(self::STATUSES[$status]))
-                                                <flux:badge size="sm" :color="self::STATUSES[$status]['color']">
-                                                    {{ self::STATUSES[$status]['title'] }}
-                                                </flux:badge>
-                                            @endif
-
-                                            @if ($commande)
-                                                <flux:text size="sm" class="flex min-w-0 items-center gap-1">
-                                                    <flux:icon.shopping-bag variant="micro" class="shrink-0 text-zinc-400" />
-                                                    <span class="truncate" title="{{ $commande }}">{{ $commande }}</span>
-                                                </flux:text>
-                                            @endif
-                                        </div>
+                                    <div class="min-w-0">
+                                        <div class="{{ $cardTitle }} truncate">{{ $ticket['num_ticket'] ?? '—' }}</div>
+                                        <div class="{{ $cardDesc }} font-mono">#{{ $ticket['id'] }}</div>
                                     </div>
 
                                     <flux:icon.chevron-right
@@ -467,23 +472,45 @@ new class extends Component
                                     />
                                 </a>
 
-                                {{-- Pied de carte : uniquement si le ticket n'est pas clôturé --}}
-                                @unless ($closed)
-                                    <div class="flex items-center justify-between gap-2 border-t border-zinc-200 px-3 py-2 dark:border-white/10">
-                                        <flux:text size="sm">Ce ticket est encore ouvert</flux:text>
+                                {{-- Panneau blanc : badges, commande, action --}}
+                                <div class="{{ $panel }} {{ $divide }}">
+                                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3">
+                                        <flux:badge size="sm" :color="$label['color']">{{ $label['text'] }}</flux:badge>
 
-                                        <flux:button
-                                            size="sm"
-                                            variant="danger"
-                                            wire:click="updateStatus({{ (int) $ticket['id'] }}, 'cloture')"
-                                            wire:confirm="Clôturer le ticket {{ $numLabel }} ?"
-                                            wire:loading.attr="disabled"
-                                            wire:target="updateStatus({{ (int) $ticket['id'] }}, 'cloture')"
-                                        >
-                                            Clôturer le ticket
-                                        </flux:button>
+                                        @if ($closed)
+                                            <flux:badge size="sm" color="green" icon="check-circle">Clôturé</flux:badge>
+                                        @elseif (isset(self::STATUSES[$status]))
+                                            <flux:badge size="sm" :color="self::STATUSES[$status]['color']">
+                                                {{ self::STATUSES[$status]['title'] }}
+                                            </flux:badge>
+                                        @endif
+
+                                        @if ($commande)
+                                            <flux:text size="sm" class="flex min-w-0 items-center gap-1">
+                                                <flux:icon.shopping-bag variant="micro" class="shrink-0 text-zinc-400" />
+                                                <span class="truncate" title="{{ $commande }}">{{ $commande }}</span>
+                                            </flux:text>
+                                        @endif
                                     </div>
-                                @endunless
+
+                                    {{-- Pied : uniquement si le ticket n'est pas clôturé --}}
+                                    @unless ($closed)
+                                        <div class="flex items-center justify-between gap-2 px-4 py-2.5">
+                                            <flux:text size="sm">Ce ticket est encore ouvert</flux:text>
+
+                                            <flux:button
+                                                size="sm"
+                                                variant="danger"
+                                                wire:click="updateStatus({{ (int) $ticket['id'] }}, 'cloture')"
+                                                wire:confirm="Clôturer le ticket {{ $numLabel }} ?"
+                                                wire:loading.attr="disabled"
+                                                wire:target="updateStatus({{ (int) $ticket['id'] }}, 'cloture')"
+                                            >
+                                                Clôturer le ticket
+                                            </flux:button>
+                                        </div>
+                                    @endunless
+                                </div>
                             </div>
                         </li>
                     @empty

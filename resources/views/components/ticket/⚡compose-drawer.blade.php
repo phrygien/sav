@@ -526,8 +526,11 @@ new class extends Component
         $fieldLabel = 'w-14 shrink-0 text-xs font-bold text-zinc-500 dark:text-zinc-400';
         $fieldInput = 'min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:ring-0 read-only:text-zinc-600 dark:text-white dark:read-only:text-zinc-300';
 
-        $miniBtn    = 'inline-flex items-center rounded-md px-1.5 py-1 text-xs font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-zinc-500 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white';
-        $toolBtn    = 'inline-flex size-9 items-center justify-center rounded-lg text-base text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-zinc-500 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white';
+        // Libellés à apostrophe : variables PHP pour ne pas imbriquer de quotes dans les attributs des composants Blade
+        $lblEditSubject      = __("Modifier l'objet");
+        $lblTranslateSubject = __("Traduire l'objet dans la langue du client");
+
+        // Les boutons utilisent désormais <flux:button> (variants : default, primary, filled, danger, ghost, subtle)
         $linkInput  = 'block w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-2 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10 dark:border-white/10 dark:bg-zinc-900 dark:text-white';
     @endphp
 
@@ -586,14 +589,12 @@ new class extends Component
                                 class="{{ $fieldInput }}"
                             />
 
-                            <div class="flex shrink-0 items-center gap-0.5">
+                            <div class="flex shrink-0 items-center gap-1">
                                 @if (! $editDestinataire)
-                                    <button type="button" wire:click="$set('editDestinataire', true)" class="{{ $miniBtn }}" title="{{ __('Modifier le destinataire') }}" aria-label="{{ __('Modifier le destinataire') }}">
-                                        <i class="iconoir-edit-pencil" aria-hidden="true"></i>
-                                    </button>
+                                    <flux:button size="xs" variant="subtle" icon="pencil-square" wire:click="$set('editDestinataire', true)" title="{{ __('Modifier le destinataire') }}" aria-label="{{ __('Modifier le destinataire') }}" />
                                 @else
-                                    <button type="button" wire:click="$set('editDestinataire', false)" class="{{ $miniBtn }} !text-zinc-900 dark:!text-white">{{ __('Valider') }}</button>
-                                    <button type="button" wire:click="resetDestinataire" class="{{ $miniBtn }}">{{ __('Annuler') }}</button>
+                                    <flux:button size="xs" variant="primary" color="green" wire:click="$set('editDestinataire', false)">{{ __('Valider') }}</flux:button>
+                                    <flux:button size="xs" variant="ghost" wire:click="resetDestinataire">{{ __('Annuler') }}</flux:button>
                                 @endif
                             </div>
                         </div>
@@ -604,11 +605,9 @@ new class extends Component
 
                             <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1">
                                 @foreach ($cc as $index => $email)
-                                    <span wire:key="cc-{{ $index }}-{{ $email }}" class="inline-flex items-center gap-1 rounded-md bg-zinc-100 py-0.5 pe-1 ps-2 text-xs text-zinc-700 dark:bg-white/10 dark:text-zinc-200">
+                                    <span wire:key="cc-{{ $index }}-{{ $email }}" class="inline-flex items-center gap-0.5 rounded-md bg-zinc-100 py-0.5 pe-0.5 ps-2 text-xs text-zinc-700 dark:bg-white/10 dark:text-zinc-200">
                                         {{ $email }}
-                                        <button type="button" wire:click="removeCC({{ $index }})" class="flex items-center rounded p-0.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:hover:bg-white/15 dark:hover:text-white" aria-label="{{ __('Retirer') }}">
-                                            <i class="iconoir-xmark text-[11px]" aria-hidden="true"></i>
-                                        </button>
+                                        <flux:button size="xs" variant="subtle" icon="x-mark" inset wire:click="removeCC({{ $index }})" aria-label="{{ __('Retirer') }}" />
                                     </span>
                                 @endforeach
 
@@ -650,33 +649,30 @@ new class extends Component
                                 class="{{ $fieldInput }} font-semibold"
                             />
 
-                            <div class="flex shrink-0 items-center gap-0.5">
+                            <div class="flex shrink-0 items-center gap-1">
                                 @if (! $editSubject)
-                                    <button type="button" wire:click="$set('editSubject', true)" class="{{ $miniBtn }}" title="{{ __("Modifier l'objet") }}" aria-label="{{ __("Modifier l'objet") }}">
-                                        <i class="iconoir-edit-pencil" aria-hidden="true"></i>
-                                    </button>
+                                    <flux:button size="xs" variant="subtle" icon="pencil-square" wire:click="$set('editSubject', true)" title="{{ $lblEditSubject }}" aria-label="{{ $lblEditSubject }}" />
                                 @else
-                                    <button type="button" wire:click="$set('editSubject', false)" class="{{ $miniBtn }} !text-zinc-900 dark:!text-white">{{ __('Valider') }}</button>
-                                    <button type="button" wire:click="resetSubject" class="{{ $miniBtn }}">{{ __('Annuler') }}</button>
+                                    <flux:button size="xs" variant="primary" color="green" wire:click="$set('editSubject', false)">{{ __('Valider') }}</flux:button>
+                                    <flux:button size="xs" variant="ghost" wire:click="resetSubject">{{ __('Annuler') }}</flux:button>
                                 @endif
                             </div>
                         </div>
 
                         {{-- Traduire l'objet --}}
                         <div class="flex items-center px-4 py-1.5 ps-[4.75rem]">
-                            <button
-                                type="button"
+                            <flux:button
+                                size="xs"
+                                variant="subtle"
+                                icon="language"
                                 wire:click="translateSubjectOpenAI"
                                 wire:loading.attr="disabled"
                                 wire:target="translateSubjectOpenAI"
-                                class="{{ $miniBtn }} gap-1.5 disabled:opacity-50 !text-purple-600 hover:!text-purple-700 dark:!text-purple-400 dark:hover:!text-purple-300"
-                                title="{{ __("Traduire l'objet dans la langue du client") }}"
+                                title="{{ $lblTranslateSubject }}"
                             >
-                                <i class="iconoir-language" wire:loading.remove wire:target="translateSubjectOpenAI" aria-hidden="true"></i>
-                                <i class="iconoir-refresh animate-spin" wire:loading wire:target="translateSubjectOpenAI" aria-hidden="true"></i>
-                                <span wire:loading.remove wire:target="translateSubjectOpenAI">{{ __("Traduire l'objet") }}</span>
-                                <span wire:loading wire:target="translateSubjectOpenAI">{{ __('Traduction…') }}</span>
-                            </button>
+                                <span wire:loading.remove wire:target="translateSubjectOpenAI" class="text-purple-600 dark:text-purple-400">{{ __("Traduire l'objet") }}</span>
+                                <span wire:loading wire:target="translateSubjectOpenAI" class="text-purple-600 dark:text-purple-400">{{ __('Traduction…') }}</span>
+                            </flux:button>
                         </div>
 
                         {{-- Éditeur. Ctrl/⌘ + Entrée ouvre la confirmation d'envoi.
@@ -703,15 +699,15 @@ new class extends Component
                         {{-- Message original du client : citation repliée sous l'éditeur --}}
                         @if ($message_client !== '')
                             <div x-data="{ open: false }" class="px-4 py-3">
-                                <button
-                                    type="button"
-                                    @click="open = ! open"
-                                    class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300/70 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-600 transition hover:bg-zinc-50 dark:border-white/10 dark:bg-transparent dark:text-zinc-300 dark:hover:bg-white/5"
-                                    :aria-expanded="open"
+                                <flux:button
+                                    size="xs"
+                                    variant="filled"
+                                    icon="ellipsis-horizontal"
+                                    x-on:click="open = ! open"
+                                    x-bind:aria-expanded="open"
                                 >
-                                    <i class="iconoir-more-horiz" aria-hidden="true"></i>
                                     <span x-text="open ? '{{ __('Masquer le message original') }}' : '{{ __('Message original du client') }}'"></span>
-                                </button>
+                                </flux:button>
 
                                 <div x-show="open" x-collapse x-cloak>
                                     <div class="mt-2 max-h-32 overflow-y-auto whitespace-pre-line break-words border-l-2 border-zinc-300 ps-3 text-[13px] text-zinc-500 dark:border-white/20 dark:text-zinc-400">
@@ -815,9 +811,7 @@ new class extends Component
 
             {{-- Pied : toujours en bas du tiroir. Outils à gauche, Annuler + Envoyer à droite --}}
             <div class="flex shrink-0 items-center gap-1 border-t border-zinc-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-zinc-800">
-                <button type="button" @click="$dispatch('attach-browse')" class="{{ $toolBtn }}" title="{{ __('Joindre des fichiers') }}" aria-label="{{ __('Joindre des fichiers') }}">
-                    <i class="iconoir-attachment" aria-hidden="true"></i>
-                </button>
+                <flux:button variant="ghost" size="sm" icon="paper-clip" x-on:click="$dispatch('attach-browse')" title="{{ __('Joindre des fichiers') }}" aria-label="{{ __('Joindre des fichiers') }}" />
 
                 {{-- Insérer un lien : le texte du lien (facultatif) et l'adresse sont insérés à la position du curseur --}}
                 <div
@@ -863,9 +857,7 @@ new class extends Component
                     }"
                     @click.outside="open = false"
                 >
-                    <button type="button" @click="toggle()" class="{{ $toolBtn }}" :class="open && 'bg-zinc-100 dark:bg-white/10'" title="{{ __('Insérer un lien') }}" aria-label="{{ __('Insérer un lien') }}" :aria-expanded="open">
-                        <i class="iconoir-link" aria-hidden="true"></i>
-                    </button>
+                    <flux:button variant="ghost" size="sm" icon="link" x-on:click="toggle()" x-bind:class="open && 'bg-zinc-100 dark:bg-white/10'" x-bind:aria-expanded="open" title="{{ __('Insérer un lien') }}" aria-label="{{ __('Insérer un lien') }}" />
 
                     <div
                         x-show="open"
@@ -910,35 +902,25 @@ new class extends Component
                             <p x-show="error" x-text="error" x-cloak class="text-xs text-red-600 dark:text-red-400" role="alert"></p>
 
                             <div class="flex items-center justify-end gap-2">
-                                <button type="button" @click="open = false" class="inline-flex items-center rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-900 transition hover:bg-zinc-50 dark:border-white/10 dark:bg-transparent dark:text-white dark:hover:bg-white/5">
-                                    {{ __('Annuler') }}
-                                </button>
-                                <button type="button" @click="submit()" class="inline-flex items-center rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200">
-                                    {{ __('Insérer') }}
-                                </button>
+                                <flux:button size="sm" x-on:click="open = false">{{ __('Annuler') }}</flux:button>
+                                <flux:button size="sm" variant="primary" color="blue" x-on:click="submit()">{{ __('Insérer') }}</flux:button>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <button type="button" wire:click="correctionOpenAI" wire:loading.attr="disabled" wire:target="correctionOpenAI" class="{{ $toolBtn }}" title="{{ __('Suggestion : corriger et améliorer le texte') }}" aria-label="{{ __('Suggestion') }}">
-                    <i class="iconoir-magic-wand" wire:loading.remove wire:target="correctionOpenAI" aria-hidden="true"></i>
-                    <i class="iconoir-refresh animate-spin" wire:loading wire:target="correctionOpenAI" aria-hidden="true"></i>
-                </button>
+                <flux:button variant="ghost" size="sm" icon="sparkles" wire:click="correctionOpenAI" wire:loading.attr="disabled" wire:target="correctionOpenAI" title="{{ __('Suggestion : corriger et améliorer le texte') }}" aria-label="{{ __('Suggestion') }}" />
 
-                <button type="button" wire:click="translateOpenAI" wire:loading.attr="disabled" wire:target="translateOpenAI" class="{{ $toolBtn }}" title="{{ __('Traduire dans la langue du client') }}" aria-label="{{ __('Traduire') }}">
-                    <i class="iconoir-language" wire:loading.remove wire:target="translateOpenAI" aria-hidden="true"></i>
-                    <i class="iconoir-refresh animate-spin" wire:loading wire:target="translateOpenAI" aria-hidden="true"></i>
-                </button>
+                <flux:button variant="ghost" size="sm" icon="language" wire:click="translateOpenAI" wire:loading.attr="disabled" wire:target="translateOpenAI" title="{{ __('Traduire dans la langue du client') }}" aria-label="{{ __('Traduire') }}" />
 
                 <flux:spacer />
 
                 <div class="flex shrink-0 items-center gap-2">
                     <flux:modal.close>
-                        <flux:button>{{ __('Annuler') }}</flux:button>
+                        <flux:button variant="ghost">{{ __('Annuler') }}</flux:button>
                     </flux:modal.close>
 
-                    <flux:button variant="primary" wire:click="$set('showSendModal', true)">
+                    <flux:button variant="primary" icon="paper-airplane" wire:click="$set('showSendModal', true)">
                         {{ __('Envoyer') }}
                     </flux:button>
                 </div>
@@ -969,16 +951,13 @@ new class extends Component
                     </div>
 
                     <div class="flex shrink-0 items-center gap-2">
-                        <flux:button wire:click="$set('showSendModal', false)" wire:loading.attr="disabled" wire:target="reply">
+                        <flux:button variant="filled" wire:click="$set('showSendModal', false)" wire:loading.attr="disabled" wire:target="reply">
                             {{ __('Revenir') }}
                         </flux:button>
 
-                        <flux:button variant="primary" wire:click="reply" wire:loading.attr="disabled" wire:target="reply">
-                            <span class="flex items-center gap-1.5">
-                                <i class="iconoir-refresh animate-spin" wire:loading wire:target="reply" aria-hidden="true"></i>
-                                <span wire:loading.remove wire:target="reply">{{ __('Envoyer maintenant') }}</span>
-                                <span wire:loading wire:target="reply">{{ __('Envoi en cours…') }}</span>
-                            </span>
+                        <flux:button variant="primary" color="green" wire:click="reply" wire:loading.attr="disabled" wire:target="reply">
+                            <span wire:loading.remove wire:target="reply">{{ __('Envoyer maintenant') }}</span>
+                            <span wire:loading wire:target="reply">{{ __('Envoi en cours…') }}</span>
                         </flux:button>
                     </div>
                 </div>

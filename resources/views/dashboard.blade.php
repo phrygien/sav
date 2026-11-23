@@ -1,5 +1,5 @@
 <x-layouts::app :title="__('Dashboard')">
-    <div class="flex h-full w-full flex-1 flex-col gap-8 px-4 pb-10 pt-4 lg:px-8">
+    <div class="flex h-full mx-auto max-w-[90rem] flex-1 flex-col gap-8 px-4 pb-10 pt-4 lg:px-8">
 
         {{-- En-tête --}}
         <div class="space-y-1">

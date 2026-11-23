@@ -1,4 +1,4 @@
-{{-- Onglet « Ticket ». Attend : $details, $messages --}}
+{{-- Onglet « Ticket » (version compacte). Attend : $details, $messages --}}
 @php
     $status = $this::STATUSES[$details['status'] ?? ''] ?? ['title' => ($details['status'] ?? '—'), 'color' => 'zinc'];
     $next   = $this->nextStatus;
@@ -7,25 +7,13 @@
     $nextColor = $this::STATUSES[$next['next'] ?? '']['color'] ?? 'zinc';
 
     // Classes littérales (pour que Tailwind les détecte)
-    $accentBar = [
+    $bg = [
         'amber' => 'bg-amber-500',
         'blue'  => 'bg-blue-500',
         'green' => 'bg-green-500',
         'zinc'  => 'bg-zinc-400',
     ];
-    $dotSolid = [
-        'amber' => 'bg-amber-500 border-amber-500',
-        'blue'  => 'bg-blue-500 border-blue-500',
-        'green' => 'bg-green-500 border-green-500',
-        'zinc'  => 'bg-zinc-400 border-zinc-400',
-    ];
-    $dotHalo = [
-        'amber' => 'ring-4 ring-amber-500/25',
-        'blue'  => 'ring-4 ring-blue-500/25',
-        'green' => 'ring-4 ring-green-500/25',
-        'zinc'  => 'ring-4 ring-zinc-400/25',
-    ];
-    $textActive = [
+    $text = [
         'amber' => 'text-amber-600 dark:text-amber-400',
         'blue'  => 'text-blue-600 dark:text-blue-400',
         'green' => 'text-green-600 dark:text-green-400',
@@ -35,212 +23,169 @@
     // ── Style de carte (seul endroit à modifier pour re-thémer toutes les cartes) ──
     // Conteneur gris très clair, coins arrondis
     $card      = 'overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 dark:border-white/10 dark:bg-zinc-900';
-    // En-tête de carte : titre gras + description grise
-    $cardHead  = 'px-6 py-5';
-    $cardTitle = 'text-sm font-bold text-zinc-900 dark:text-white';
-    $cardDesc  = 'mt-1 text-sm text-zinc-500 dark:text-zinc-400';
+    // En-tête : titre + description grise
+    $cardHead  = 'px-4 py-3';
+    $cardTitle = 'text-sm font-semibold text-zinc-900 dark:text-white';
+    $cardDesc  = 'mt-0.5 text-xs text-zinc-500 dark:text-zinc-400';
     // Panneau blanc interne, en retrait du conteneur
-    $panel     = 'mx-1.5 mb-1.5 overflow-hidden rounded-xl border border-zinc-300/70 bg-white dark:border-white/10 dark:bg-zinc-800';
-    // Ligne de réglage : libellé à gauche, valeur à droite
-    $row       = 'flex flex-col gap-3 px-6 py-6 sm:flex-row sm:items-center sm:justify-between sm:gap-6';
-    $rowTitle  = 'text-sm font-bold text-zinc-900 dark:text-white';
-    $rowDesc   = 'mt-1 text-sm text-zinc-400 dark:text-zinc-500';
-    $divide    = 'divide-y divide-zinc-300/70 dark:divide-white/10';
+    $panel     = 'mx-1 mb-1 overflow-hidden rounded-xl border border-zinc-300/70 bg-white dark:border-white/10 dark:bg-zinc-800';
+    $divide    = 'divide-y divide-zinc-200/70 dark:divide-white/10';
+    // Ligne libellé / valeur
+    $row       = 'flex items-center justify-between gap-3 px-4 py-2.5';
+    $label     = 'text-xs text-zinc-500 dark:text-zinc-400';
+    $value     = 'min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-white';
 
     // Progression
     $steps        = array_keys($this::STATUSES);
-    $stepCount    = count($steps);
     $currentIndex = array_search($details['status'] ?? '', $steps, true);
     $currentIndex = $currentIndex === false ? -1 : $currentIndex;
-    $trackInset   = $stepCount > 0 ? 50 / $stepCount : 0;
-    $progress     = ($stepCount > 1 && $currentIndex > 0) ? ($currentIndex / ($stepCount - 1)) * 100 : 0;
     $activeColor  = $status['color'];
 
     // Client
-    $clientName = trim((string) ($details['nom_client'] ?? ''));
-    $initials   = $clientName !== ''
-        ? collect(preg_split('/\s+/u', $clientName))->filter()->take(2)->map(fn ($w) => mb_strtoupper(mb_substr($w, 0, 1)))->implode('')
-        : '?';
-
+    $clientName    = trim((string) ($details['nom_client'] ?? ''));
     $clientMail    = trim((string) ($details['original_client_mail'] ?? ''));
     $receptionMail = trim((string) ($details['reception_mail'] ?? ''));
 
     // Références copiables
     $refs = [
-        ['label' => __('N° ticket'),      'value' => $details['num_ticket'] ?? null,   'icon' => 'iconoir-hashtag'],
-        ['label' => __('N° de commande'), 'value' => $details['num_commande'] ?? null, 'icon' => 'iconoir-shopping-bag'],
+        ['label' => __('N° ticket'),   'value' => $details['num_ticket'] ?? null],
+        ['label' => __('N° commande'), 'value' => $details['num_commande'] ?? null],
     ];
 
-    // Dernier message de la conversation (aperçu)
+    // Dernier message (aperçu court)
     $lastMessage = ! empty($messages) ? end($messages) : null;
     $lastPreview = $lastMessage
         ? \Illuminate\Support\Str::limit(
             trim(preg_replace('/\s+/u', ' ', \App\Support\MailText::plainText((string) ($lastMessage['message'] ?? ''))) ?? ''),
-            420
+            220
         )
         : '';
     $lastDate = $lastMessage['date'] ?? $lastMessage['created_at'] ?? null;
 @endphp
 
-<div class="space-y-6">
+<div class="space-y-4">
 
-    {{-- ───────────── En-tête : statut, titre, actions ───────────── --}}
-    <div class="flex flex-col gap-5 border-b border-zinc-200 pb-6 lg:flex-row lg:items-start lg:justify-between dark:border-white/10">
-        <div class="min-w-0 space-y-3">
-
-            {{-- Ligne méta : statut · n° ticket · attention --}}
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <span class="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 dark:border-white/10 dark:bg-zinc-800 dark:text-zinc-200">
-                    <span class="size-1.5 rounded-full {{ $accentBar[$status['color']] ?? $accentBar['zinc'] }}"></span>
-                    {{ $status['title'] }}
-                </span>
-
-                @if (! empty($details['num_ticket']))
-                    <span class="font-mono text-xs font-medium text-zinc-500 dark:text-zinc-400">#{{ $details['num_ticket'] }}</span>
-                @endif
-
-                @if (! empty($details['need_attention']))
-                    <span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
-                        <i class="iconoir-warning-triangle"></i>
-                        {{ __('Attention') }}
+    {{-- ───────────── En-tête compact, dans une carte ───────────── --}}
+    <div class="{{ $card }} p-1">
+        <div class="flex flex-col gap-3 rounded-xl border border-zinc-300/70 bg-white px-4 py-3 lg:flex-row lg:items-center lg:justify-between dark:border-white/10 dark:bg-zinc-800">
+            <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-xs font-medium text-zinc-700 dark:border-white/10 dark:bg-zinc-800 dark:text-zinc-200">
+                        <span class="size-1.5 rounded-full {{ $bg[$status['color']] ?? $bg['zinc'] }}"></span>
+                        {{ $status['title'] }}
                     </span>
-                @endif
+
+                    @if (! empty($details['num_ticket']))
+                        <span class="font-mono text-xs text-zinc-500 dark:text-zinc-400">#{{ $details['num_ticket'] }}</span>
+                    @endif
+
+                    @if (! empty($details['need_attention']))
+                        <span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
+                            {{ __('Le client a répondu') }}
+                        </span>
+                    @endif
+
+                    <span class="text-xs text-zinc-500 dark:text-zinc-400">
+                        @if ($clientName !== '') {{ $clientName }} · @endif
+                        {{ count($messages) }} {{ __('message(s)') }}
+                    </span>
+                </div>
+
+                <flux:heading size="lg" class="mt-1 break-words">
+                    {{ $details['subject_ticket'] ?? __('Ticket sans objet') }}
+                </flux:heading>
             </div>
 
-            {{-- Titre --}}
-            <flux:heading size="xl" class="break-words">
-                {{ $details['subject_ticket'] ?? __('Ticket sans objet') }}
-            </flux:heading>
+            <div class="flex shrink-0 flex-wrap items-center gap-2">
+                <flux:button variant="primary" icon="paper-airplane" wire:click="openCompose">
+                    {{ __('Répondre') }}
+                </flux:button>
 
-            {{-- Sous-titre : client · nombre de messages --}}
-            <flux:text class="text-sm">
-                @if ($clientName !== '')
-                    {{ $clientName }} ·
-                @endif
-                {{ count($messages) }} {{ __('message(s)') }}
-            </flux:text>
-        </div>
+                <flux:button
+                    icon="pencil-square"
+                    x-on:click="document.getElementById('note-card').scrollIntoView({ behavior: 'smooth', block: 'center' })"
+                >
+                    {{ __('Note') }}
+                </flux:button>
 
-        <div class="flex shrink-0 flex-wrap items-center gap-2">
-            {{-- Action principale : répondre au client --}}
-            <flux:button variant="primary" icon="paper-airplane" wire:click="openCompose">
-                {{ __('Répondre') }}
-            </flux:button>
-
-            <flux:button
-                icon="pencil-square"
-                x-on:click="document.getElementById('note-card').scrollIntoView({ behavior: 'smooth', block: 'center' })"
-            >
-                {{ __('Ajouter note') }}
-            </flux:button>
-
-            {{-- Changement de statut : bouton neutre, pastille de la couleur du prochain statut --}}
-            <flux:button
-                wire:click="updateStatus('{{ $next['next'] }}')"
-                wire:loading.attr="disabled"
-                wire:target="updateStatus"
-            >
-                <span class="flex items-center gap-2">
-                    <span class="size-2 rounded-full {{ $accentBar[$nextColor] ?? $accentBar['zinc'] }}"></span>
-                    <span>{{ $next['label'] }}</span>
-                </span>
-            </flux:button>
+                <flux:button
+                    wire:click="updateStatus('{{ $next['next'] }}')"
+                    wire:loading.attr="disabled"
+                    wire:target="updateStatus"
+                >
+                    <span class="flex items-center gap-1.5">
+                        <span class="size-2 rounded-full {{ $bg[$nextColor] ?? $bg['zinc'] }}"></span>
+                        <span>{{ $next['label'] }}</span>
+                    </span>
+                </flux:button>
+            </div>
         </div>
     </div>
 
-    {{-- ───────────── Deux colonnes : infos (gauche) · travail (droite) ───────────── --}}
-    <div class="grid items-start gap-6 xl:grid-cols-2">
+    {{-- ───────────── Grille : infos (1/3) · travail (2/3) ───────────── --}}
+    <div class="grid items-start gap-4 xl:grid-cols-3">
 
-        {{-- ================= Colonne gauche : contact · références · progression ================= --}}
-        <div class="min-w-0 space-y-6">
+        {{-- ================= Colonne gauche : contact · progression ================= --}}
+        <div class="min-w-0 space-y-4">
 
-            {{-- Carte : Contact (client + adresse de réception) --}}
+            {{-- Carte : Contact & références --}}
             <div class="{{ $card }}">
                 <div class="{{ $cardHead }}">
-                    <div class="{{ $cardTitle }}">{{ __('Contact') }}</div>
-                    <div class="{{ $cardDesc }}">{{ __('Client à l\'origine du ticket et adresse de réception.') }}</div>
+                    <div class="{{ $cardTitle }}">{{ __('Contact & références') }}</div>
+                    <div class="{{ $cardDesc }}">{{ __('Client à l\'origine du ticket et numéros utiles.') }}</div>
                 </div>
 
-                <div class="{{ $panel }} {{ $divide }}">
-                    {{-- Client --}}
+                <dl class="{{ $panel }} {{ $divide }}">
                     <div class="{{ $row }}">
-                        <div class="min-w-0">
-                            <div class="{{ $rowTitle }}">{{ __('Client') }}</div>
-                            <div class="{{ $rowDesc }}">{{ __('Contact à l\'origine du ticket.') }}</div>
-                        </div>
-
-                        <div class="min-w-0 sm:max-w-[55%]">
-                            <div class="flex items-center gap-3">
-                                <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700 dark:bg-violet-500/20 dark:text-violet-300">
-                                    {{ $initials }}
-                                </span>
-
-                                <div class="min-w-0">
-                                    <div class="break-words text-sm font-bold {{ $clientName !== '' ? 'text-zinc-900 dark:text-white' : 'text-zinc-400 dark:text-zinc-500' }}">
-                                        {{ $clientName !== '' ? $clientName : '—' }}
-                                    </div>
-
-                                    @if ($clientMail !== '')
-                                        <a href="mailto:{{ $clientMail }}" class="block break-all text-xs text-sky-600 hover:underline dark:text-sky-400">{{ $clientMail }}</a>
-                                    @else
-                                        <span class="text-xs text-zinc-400 dark:text-zinc-500">—</span>
-                                    @endif
-                                </div>
-                            </div>
-                        </div>
+                        <dt class="{{ $label }}">{{ __('Client') }}</dt>
+                        <dd class="{{ $value }}">{{ $clientName !== '' ? $clientName : '—' }}</dd>
                     </div>
 
-                    {{-- Reçu sur --}}
                     <div class="{{ $row }}">
-                        <div class="min-w-0">
-                            <div class="{{ $rowTitle }}">{{ __('Reçu sur') }}</div>
-                            <div class="{{ $rowDesc }}">{{ __('Adresse de réception du support.') }}</div>
-                        </div>
-
-                        @if ($receptionMail !== '')
-                            <a href="mailto:{{ $receptionMail }}" class="min-w-0 truncate text-sm font-semibold text-zinc-700 hover:underline dark:text-zinc-300" title="{{ $receptionMail }}">{{ $receptionMail }}</a>
-                        @else
-                            <span class="text-sm font-bold text-zinc-400 dark:text-zinc-500">—</span>
-                        @endif
+                        <dt class="{{ $label }}">{{ __('E-mail') }}</dt>
+                        <dd class="min-w-0">
+                            @if ($clientMail !== '')
+                                <a href="mailto:{{ $clientMail }}" class="block truncate text-sm text-sky-600 hover:underline dark:text-sky-400" title="{{ $clientMail }}">{{ $clientMail }}</a>
+                            @else
+                                <span class="text-sm text-zinc-400">—</span>
+                            @endif
+                        </dd>
                     </div>
-                </div>
-            </div>
 
-            {{-- Carte : Références (copiables) --}}
-            <div class="{{ $card }}">
-                <div class="{{ $cardHead }}">
-                    <div class="{{ $cardTitle }}">{{ __('Références') }}</div>
-                    <div class="{{ $cardDesc }}">{{ __('Numéros utiles pour suivre ce ticket.') }}</div>
-                </div>
+                    <div class="{{ $row }}">
+                        <dt class="{{ $label }}">{{ __('Reçu sur') }}</dt>
+                        <dd class="min-w-0">
+                            @if ($receptionMail !== '')
+                                <a href="mailto:{{ $receptionMail }}" class="block truncate text-sm font-medium text-zinc-700 hover:underline dark:text-zinc-300" title="{{ $receptionMail }}">{{ $receptionMail }}</a>
+                            @else
+                                <span class="text-sm text-zinc-400">—</span>
+                            @endif
+                        </dd>
+                    </div>
 
-                <div class="{{ $panel }} {{ $divide }}">
                     @foreach ($refs as $ref)
                         <div class="{{ $row }}" x-data="{ copied: false }">
-                            <div class="min-w-0">
-                                <div class="{{ $rowTitle }}">{{ $ref['label'] }}</div>
-                                <div class="{{ $rowDesc }}">{{ __('Cliquer pour copier la référence.') }}</div>
-                            </div>
-
-                            <div class="flex min-w-0 items-center gap-2">
-                                <span class="truncate font-mono text-sm font-bold {{ $ref['value'] ? 'text-zinc-900 dark:text-white' : 'text-zinc-400 dark:text-zinc-500' }}">
+                            <dt class="{{ $label }}">{{ $ref['label'] }}</dt>
+                            <dd class="flex min-w-0 items-center gap-1.5">
+                                <span class="truncate font-mono text-sm font-medium {{ $ref['value'] ? 'text-zinc-900 dark:text-white' : 'text-zinc-400' }}">
                                     {{ $ref['value'] ?: '—' }}
                                 </span>
 
                                 @if ($ref['value'])
                                     <button
                                         type="button"
-                                        class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-zinc-300/70 text-zinc-400 transition hover:bg-zinc-50 hover:text-zinc-700 dark:border-white/10 dark:hover:bg-white/10 dark:hover:text-zinc-200"
+                                        class="flex size-6 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200"
                                         title="{{ __('Copier') }}"
                                         x-on:click="navigator.clipboard.writeText(@js((string) $ref['value'])); copied = true; setTimeout(() => copied = false, 1500)"
                                     >
-                                        <i x-show="! copied" class="{{ $ref['icon'] }}"></i>
-                                        <i x-show="copied" x-cloak class="iconoir-check text-green-600 dark:text-green-400"></i>
+                                        <i x-show="! copied" class="iconoir-copy text-xs"></i>
+                                        <i x-show="copied" x-cloak class="iconoir-check text-xs text-green-600 dark:text-green-400"></i>
                                     </button>
                                 @endif
-                            </div>
+                            </dd>
                         </div>
                     @endforeach
-                </div>
+                </dl>
             </div>
 
             {{-- Carte : Progression --}}
@@ -250,59 +195,34 @@
                     <div class="{{ $cardDesc }}">{{ __('Étape actuelle du traitement.') }}</div>
                 </div>
 
-                <div class="{{ $panel }} px-6 py-8">
-                    <div class="relative">
-                        <div
-                            class="absolute top-3 h-0.5 -translate-y-1/2 rounded-full bg-zinc-200 dark:bg-white/10"
-                            style="left: {{ $trackInset }}%; right: {{ $trackInset }}%;"
-                        >
-                            <div
-                                class="h-full rounded-full transition-all duration-500 {{ $accentBar[$activeColor] ?? $accentBar['zinc'] }}"
-                                style="width: {{ $progress }}%;"
-                            ></div>
-                        </div>
-
-                        <ol class="relative flex items-start">
-                            @foreach ($this::STATUSES as $key => $step)
-                                @php
-                                    $index   = $loop->index;
-                                    $done    = $index < $currentIndex;
-                                    $current = $index === $currentIndex;
-                                    $isLast  = $loop->last;
-                                @endphp
-
-                                <li class="flex-1 text-center" @if ($current) aria-current="step" @endif>
-                                    <span @class([
-                                        'relative z-10 mx-auto flex size-6 items-center justify-center rounded-full border-2 text-xs transition-colors duration-300',
-                                        ($dotSolid[$activeColor] ?? $dotSolid['zinc']).' text-white' => $done || $current,
-                                        ($dotHalo[$activeColor] ?? $dotHalo['zinc']) => $current,
-                                        'border-zinc-300 bg-white dark:border-white/20 dark:bg-zinc-900' => ! $done && ! $current,
-                                    ])>
-                                        @if ($done || ($current && $isLast))
-                                            <i class="iconoir-check"></i>
-                                        @elseif ($current)
-                                            <span class="size-2 rounded-full bg-white"></span>
-                                        @endif
-                                    </span>
-
-                                    <span @class([
-                                        'mt-2 block text-xs',
-                                        'font-bold '.($textActive[$activeColor] ?? $textActive['zinc']) => $current,
-                                        'font-semibold text-zinc-700 dark:text-zinc-300' => $done,
-                                        'text-zinc-400 dark:text-zinc-500' => ! $done && ! $current,
-                                    ])>
-                                        {{ $step['title'] }}
-                                    </span>
-                                </li>
-                            @endforeach
-                        </ol>
-                    </div>
+                <div class="{{ $panel }} px-4 py-3">
+                    <ol class="flex items-start gap-2">
+                        @foreach ($this::STATUSES as $key => $step)
+                            @php
+                                $done    = $loop->index < $currentIndex;
+                                $current = $loop->index === $currentIndex;
+                            @endphp
+                            <li class="flex-1" @if ($current) aria-current="step" @endif>
+                                <span @class([
+                                    'block h-1.5 rounded-full',
+                                    ($bg[$activeColor] ?? $bg['zinc']) => $done || $current,
+                                    'bg-zinc-200 dark:bg-white/10' => ! $done && ! $current,
+                                ])></span>
+                                <span @class([
+                                    'mt-1.5 block text-xs',
+                                    'font-bold '.($text[$activeColor] ?? $text['zinc']) => $current,
+                                    'font-medium text-zinc-700 dark:text-zinc-300' => $done,
+                                    'text-zinc-400 dark:text-zinc-500' => ! $done && ! $current,
+                                ])>{{ $step['title'] }}</span>
+                            </li>
+                        @endforeach
+                    </ol>
                 </div>
             </div>
         </div>
 
         {{-- ================= Colonne droite : résumé · dernier message · note ================= --}}
-        <div class="min-w-0 space-y-6">
+        <div class="min-w-0 space-y-4 xl:col-span-2">
 
             {{-- Résumé --}}
             <div class="{{ $card }}">
@@ -321,19 +241,19 @@
 
                 <div class="{{ $panel }}">
                     @if ($todos)
-                        <ul class="max-h-[360px] overflow-y-auto {{ $divide }}">
+                        <ul class="max-h-[420px] min-h-[260px] overflow-y-auto {{ $divide }}">
                             @foreach ($todos as $item)
-                                <li class="flex gap-2.5 px-6 py-4 text-sm text-zinc-700 dark:text-zinc-300">
+                                <li class="flex gap-2 px-4 py-2 text-sm text-zinc-700 dark:text-zinc-300">
                                     <i class="iconoir-check-circle mt-0.5 shrink-0 text-zinc-400"></i>
                                     <span class="min-w-0 break-words">{{ $item }}</span>
                                 </li>
                             @endforeach
                         </ul>
                     @else
-                        <div class="flex flex-col items-center gap-2 px-6 py-10 text-center">
-                            <i class="iconoir-task-list text-3xl text-zinc-300 dark:text-zinc-600"></i>
-                            <div class="{{ $rowTitle }}">{{ __('Aucun résumé') }}</div>
-                            <div class="text-sm text-zinc-400 dark:text-zinc-500">{{ __('Aucun résumé disponible.') }}</div>
+                        <div class="flex flex-col items-center gap-1 px-4 py-5 text-center">
+                            <i class="iconoir-task-list text-2xl text-zinc-300 dark:text-zinc-600"></i>
+                            <div class="text-sm font-semibold text-zinc-900 dark:text-white">{{ __('Aucun résumé') }}</div>
+                            <div class="text-xs text-zinc-400 dark:text-zinc-500">{{ __('Aucun résumé disponible.') }}</div>
                         </div>
                     @endif
                 </div>
@@ -349,19 +269,19 @@
                         </div>
                     </div>
 
-                    <flux:button size="sm" variant="ghost" icon-trailing="arrow-right" wire:click="setTab('conversation')">
+                    <flux:button size="xs" variant="ghost" icon-trailing="arrow-right" wire:click="setTab('conversation')">
                         {{ __('Tout voir') }}
                     </flux:button>
                 </div>
 
                 <div class="{{ $panel }}">
                     @if ($lastPreview !== '')
-                        <p class="whitespace-pre-line break-words px-6 py-5 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{{ $lastPreview }}</p>
+                        <p class="whitespace-pre-line break-words px-4 py-3 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{{ $lastPreview }}</p>
                     @else
-                        <div class="flex flex-col items-center gap-2 px-6 py-10 text-center">
-                            <i class="iconoir-chat-bubble text-3xl text-zinc-300 dark:text-zinc-600"></i>
-                            <div class="{{ $rowTitle }}">{{ __('Aucun message') }}</div>
-                            <div class="text-sm text-zinc-400 dark:text-zinc-500">{{ __('Aucun message pour le moment.') }}</div>
+                        <div class="flex flex-col items-center gap-1 px-4 py-5 text-center">
+                            <i class="iconoir-chat-bubble text-2xl text-zinc-300 dark:text-zinc-600"></i>
+                            <div class="text-sm font-semibold text-zinc-900 dark:text-white">{{ __('Aucun message') }}</div>
+                            <div class="text-xs text-zinc-400 dark:text-zinc-500">{{ __('Aucun message pour le moment.') }}</div>
                         </div>
                     @endif
                 </div>
@@ -381,7 +301,8 @@
                         this.editor = Jodit.make(this.$refs.editor, {
                             language: 'fr',
                             theme: dark ? 'dark' : 'default',
-                            height: 320,
+                            height: 200,
+                            minHeight: 160,
                             placeholder: @js(__('Écrire une note…')),
                             toolbarAdaptive: true,
                             toolbarSticky: false,
@@ -391,12 +312,10 @@
                             askBeforePasteHTML: false,
                             defaultActionOnPaste: 'insert_clear_html',
                             buttons: [
-                                'bold', 'italic', 'underline', 'strikethrough', '|',
+                                'bold', 'italic', 'underline', '|',
                                 'ul', 'ol', '|',
-                                'paragraph', 'fontsize', 'brush', '|',
-                                'align', 'indent', 'outdent', '|',
-                                'table', 'link', 'hr', '|',
-                                'undo', 'redo', 'eraser', '|',
+                                'link', 'eraser', '|',
+                                'undo', 'redo', '|',
                                 'source', 'fullsize',
                             ],
                         });
@@ -422,7 +341,7 @@
                 </div>
 
                 <div class="{{ $panel }}">
-                    <div class="p-4 sm:p-5">
+                    <div class="p-3">
                         <textarea x-ref="editor"></textarea>
 
                         @error('note')
@@ -430,8 +349,9 @@
                         @enderror
                     </div>
 
-                    <div class="flex items-center justify-end border-t border-zinc-300/70 px-6 py-4 dark:border-white/10">
+                    <div class="flex items-center justify-end border-t border-zinc-300/70 px-4 py-2.5 dark:border-white/10">
                         <flux:button
+                            size="sm"
                             variant="outline"
                             color="green"
                             icon="check"

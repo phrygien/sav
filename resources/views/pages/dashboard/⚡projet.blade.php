@@ -76,6 +76,26 @@ new class extends Component
 ?>
 
 <div class="flex flex-col gap-4" @if (! $loaded) wire:init="loadProjects" @endif>
+    @php
+        // Mêmes couleurs que la répartition des tickets : attente = orange, en cours = bleu, clôturé = vert
+        $stats = [
+            'pending_ticket' => [
+                'label'  => __('En attente'),
+                'accent' => 'text-orange-600 dark:text-orange-400',
+                'dot'    => 'bg-orange-400',
+            ],
+            'in_progress_ticket' => [
+                'label'  => __('En cours'),
+                'accent' => 'text-sky-600 dark:text-sky-400',
+                'dot'    => 'bg-sky-400',
+            ],
+            'closed_ticket' => [
+                'label'  => __('Clôturés'),
+                'accent' => 'text-emerald-600 dark:text-emerald-400',
+                'dot'    => 'bg-emerald-400',
+            ],
+        ];
+    @endphp
 
     {{-- En-tête de section : titre + description, actualiser à droite --}}
     <div class="flex items-start justify-between gap-4">
@@ -156,26 +176,21 @@ new class extends Component
                     </div>
 
                     <div class="mt-4 grid grid-cols-3 gap-3">
-                        <div>
-                            <div class="text-lg font-medium text-zinc-900 dark:text-white">
-                                {{ number_format((int) ($project['pending_ticket'] ?? 0), 0, ',', ' ') }}
-                            </div>
-                            <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('En attente') }}</div>
-                        </div>
+                        @foreach ($stats as $field => $s)
+                            @php $value = (int) ($project[$field] ?? 0); @endphp
 
-                        <div>
-                            <div class="text-lg font-medium text-zinc-900 dark:text-white">
-                                {{ number_format((int) ($project['in_progress_ticket'] ?? 0), 0, ',', ' ') }}
-                            </div>
-                            <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('En cours') }}</div>
-                        </div>
+                            <div>
+                                {{-- Chiffre coloré selon le statut ; grisé quand il vaut 0 --}}
+                                <div class="text-lg font-semibold tabular-nums {{ $value > 0 ? $s['accent'] : 'text-zinc-300 dark:text-zinc-600' }}">
+                                    {{ number_format($value, 0, ',', ' ') }}
+                                </div>
 
-                        <div>
-                            <div class="text-lg font-medium text-zinc-900 dark:text-white">
-                                {{ number_format((int) ($project['closed_ticket'] ?? 0), 0, ',', ' ') }}
+                                <div class="mt-0.5 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                                    <span class="size-1.5 shrink-0 rounded-full {{ $value > 0 ? $s['dot'] : 'bg-zinc-200 dark:bg-zinc-700' }}"></span>
+                                    <span class="truncate">{{ $s['label'] }}</span>
+                                </div>
                             </div>
-                            <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Clôturés') }}</div>
-                        </div>
+                        @endforeach
                     </div>
                 </a>
             @endforeach

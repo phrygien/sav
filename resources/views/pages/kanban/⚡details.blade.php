@@ -441,7 +441,7 @@ new class extends Component
     }
 };
 ?>
-<div class="space-y-6" wire:init="loadTicket">
+<div class="space-y-6 max-w-8xl mx-auto" wire:init="loadTicket">
     @if ($error)
         <flux:callout variant="danger" icon="exclamation-circle" :heading="$error" />
     @elseif (! $loaded)
