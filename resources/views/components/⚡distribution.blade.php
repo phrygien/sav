@@ -103,19 +103,16 @@ new class extends Component
                 'label'  => __('En attente'),
                 'accent' => 'text-orange-600 dark:text-orange-400',
                 'dot'    => 'bg-orange-400',
-                'bar'    => 'bg-orange-400 dark:bg-orange-500',
             ],
             'en_cours' => [
                 'label'  => __('En cours'),
                 'accent' => 'text-sky-600 dark:text-sky-400',
                 'dot'    => 'bg-sky-400',
-                'bar'    => 'bg-sky-400 dark:bg-sky-500',
             ],
             'cloture' => [
                 'label'  => __('Clôturé'),
                 'accent' => 'text-emerald-600 dark:text-emerald-400',
                 'dot'    => 'bg-emerald-400',
-                'bar'    => 'bg-emerald-400 dark:bg-emerald-500',
             ],
         ];
 
@@ -126,7 +123,7 @@ new class extends Component
         x-data="{ open: $persist(true).as('distribution-open') }"
         class="mb-3 overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-700/60 dark:bg-zinc-900/60"
     >
-        {{-- En-tête sur une seule ligne : titre, total, barre globale, compteurs, actions --}}
+        {{-- En-tête sur une seule ligne : titre, total, compteurs, actions --}}
         <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-3 py-2">
             <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                 <h3 class="text-xs font-semibold text-zinc-900 dark:text-white">
@@ -192,14 +189,14 @@ new class extends Component
         {{-- Contenu repliable --}}
         <div x-show="open" x-collapse>
             <div
-                class="border-t border-zinc-200 bg-white p-2 transition-opacity dark:border-zinc-700/60 dark:bg-zinc-800/60"
+                class="border-t border-zinc-200 bg-white p-1.5 transition-opacity dark:border-zinc-700/60 dark:bg-zinc-800/60"
                 wire:loading.class="opacity-60"
                 wire:target="refresh"
             >
                 @if (! $ready)
-                    <div class="grid animate-pulse grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] gap-2">
+                    <div class="grid animate-pulse grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] gap-1.5">
                         @foreach (range(1, 6) as $i)
-                            <div class="h-[52px] rounded-lg bg-zinc-100 dark:bg-zinc-700/60"></div>
+                            <div class="h-10 rounded-lg bg-zinc-100 dark:bg-zinc-700/60"></div>
                         @endforeach
                     </div>
                 @elseif ($error)
@@ -209,7 +206,7 @@ new class extends Component
                         {{ __('Aucun ticket à répartir pour le moment.') }}
                     </div>
                 @else
-                    <div class="grid grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] gap-2">
+                    <div class="grid grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] gap-1.5">
                         @foreach ($rows as $row)
                             @php $active = $selectedUserId === $row['user_id']; @endphp
 
@@ -219,7 +216,7 @@ new class extends Component
                                 wire:click="selectUser({{ $row['user_id'] }})"
                                 aria-pressed="{{ $active ? 'true' : 'false' }}"
                                 title="{{ $active ? __('Retirer le filtre') : __('Filtrer les tickets de :name', ['name' => $row['name']]) }}"
-                                class="flex w-full cursor-pointer flex-col gap-1.5 rounded-lg border px-2.5 py-1.5 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-500
+                                class="flex w-full cursor-pointer flex-col gap-0.5 rounded-lg border px-2 py-1 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-500
                                     {{ $active
                                         ? 'border-purple-400 bg-purple-50 ring-2 ring-purple-400/30 dark:border-purple-500 dark:bg-purple-500/10'
                                         : 'border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900/40 dark:hover:border-zinc-500' }}"
@@ -238,7 +235,7 @@ new class extends Component
                                 </div>
 
                                 {{-- Compteurs par statut (libellés en infobulle) --}}
-                                <div class="flex items-center gap-3 text-[11px] tabular-nums">
+                                <div class="flex items-center gap-3 pl-0.5 text-[11px] leading-tight tabular-nums">
                                     @foreach ($cols as $key => $c)
                                         <span
                                             class="inline-flex items-center gap-1 {{ $row[$key] > 0 ? $c['accent'].' font-semibold' : 'text-zinc-300 dark:text-zinc-600' }}"
@@ -252,7 +249,7 @@ new class extends Component
                         @endforeach
 
                         {{-- Non assignés (non cliquable) --}}
-                        <div class="flex flex-col gap-1.5 rounded-lg border border-dashed border-zinc-300 bg-zinc-50/60 px-2.5 py-1.5 dark:border-zinc-600 dark:bg-zinc-900/20">
+                        <div class="flex flex-col gap-0.5 rounded-lg border border-dashed border-zinc-300 bg-zinc-50/60 px-2 py-1 dark:border-zinc-600 dark:bg-zinc-900/20">
                             <div class="flex items-center gap-2">
                                 <flux:avatar size="xs" icon="user-minus" />
 
@@ -265,7 +262,7 @@ new class extends Component
                                 </div>
                             </div>
 
-                            <div class="flex items-center gap-3 text-[11px] tabular-nums">
+                            <div class="flex items-center gap-3 pl-0.5 text-[11px] leading-tight tabular-nums">
                                 @foreach ($cols as $key => $c)
                                     <span
                                         class="inline-flex items-center gap-1 {{ $unassigned[$key] > 0 ? $c['accent'].' font-semibold' : 'text-zinc-300 dark:text-zinc-600' }}"
