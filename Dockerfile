@@ -15,10 +15,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
 COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
+
 COPY . .
-RUN composer dump-autoload --optimize --no-dev
+
+# On supprime les caches Laravel copiés depuis la machine locale
+# (ils référencent des packages de dev absents ici, ex. laravel/boost)
+RUN rm -f bootstrap/cache/*.php \
+    && composer dump-autoload --optimize --no-dev
 
 # ─────────────────────────────────────────────
 # Stage 2 : build des assets front (Vite)
@@ -28,7 +34,7 @@ FROM node:22-slim AS node-builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN npm ci || npm install
 
 # Code complet + vendor déjà installé (pour que Tailwind scanne vendor/)
 COPY --from=composer-builder /app ./
@@ -40,7 +46,7 @@ RUN npm run build
 # ─────────────────────────────────────────────
 FROM php:8.4-fpm
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     supervisor \
     libpng-dev \
@@ -54,7 +60,6 @@ RUN apt-get update && apt-get install -y \
     unzip \
     curl \
     git \
-    --no-install-recommends \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) \
         mbstring \
@@ -67,21 +72,18 @@ RUN apt-get update && apt-get install -y \
         opcache \
     && rm -rf /var/lib/apt/lists/*
 
-# Limites d'upload PHP (photos smartphone souvent > 2 Mo)
-RUN { \
-        echo 'upload_max_filesize=10M'; \
-        echo 'post_max_size=12M'; \
-        echo 'memory_limit=256M'; \
-        echo 'max_execution_time=120'; \
-    } > /usr/local/etc/php/conf.d/99-uploads.ini
+# Config PHP (uploads, memory_limit, OPcache) et pool PHP-FPM (60 workers)
+COPY docker/php.ini /usr/local/etc/php/conf.d/99-custom.ini
+COPY docker/php-fpm.conf /usr/local/etc/php-fpm.d/zz-www.conf
 
 WORKDIR /var/www/html
 
 COPY --from=composer-builder /app ./
 COPY --from=node-builder /app/public/build ./public/build
 
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
-    && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
+    && chown -R www-data:www-data storage bootstrap/cache \
+    && chmod -R 775 storage bootstrap/cache
 
 COPY docker/nginx.conf /etc/nginx/sites-available/default
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
@@ -89,5 +91,6 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 80
+
 ENTRYPOINT ["entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
