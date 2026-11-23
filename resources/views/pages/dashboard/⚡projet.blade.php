@@ -76,8 +76,15 @@ new class extends Component
 ?>
 
 <div class="flex flex-col gap-4" @if (! $loaded) wire:init="loadProjects" @endif>
-    @if ($loaded)
-        <div class="flex justify-end">
+
+    {{-- En-tête de section : titre + description, actualiser à droite --}}
+    <div class="flex items-start justify-between gap-4">
+        <div class="space-y-1">
+            <h2 class="text-sm font-medium text-zinc-900 dark:text-white">{{ __('Projets') }}</h2>
+            <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Tickets en attente, en cours et clôturés par projet.') }}</p>
+        </div>
+
+        @if ($loaded)
             <flux:button
                 size="sm"
                 variant="ghost"
@@ -89,25 +96,28 @@ new class extends Component
                 <i class="hgi-stroke hgi-refresh" wire:loading.remove wire:target="refresh"></i>
                 <i class="hgi-stroke hgi-loading-03 animate-spin" wire:loading wire:target="refresh"></i>
             </flux:button>
-        </div>
-    @endif
+        @endif
+    </div>
 
     @if (! $loaded)
         {{-- Squelettes pendant le chargement initial --}}
-        <div class="grid auto-rows-min animate-pulse gap-4 md:grid-cols-3">
-            @foreach (range(1, 6) as $i)
-                <div wire:key="sk-project-{{ $i }}" class="flex flex-col gap-4 rounded-xl border border-zinc-200 bg-white p-6 dark:border-white/10 dark:bg-zinc-800">
+        <div class="grid animate-pulse gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+            @foreach (range(1, 5) as $i)
+                <div wire:key="sk-project-{{ $i }}" class="rounded-xl border border-zinc-300/70 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
                     <div class="flex items-start justify-between gap-2">
                         <div class="space-y-2">
-                            <div class="h-5 w-32 rounded bg-zinc-200 dark:bg-zinc-700"></div>
-                            <div class="h-3 w-16 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                            <div class="h-4 w-28 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                            <div class="h-3 w-14 rounded bg-zinc-200 dark:bg-zinc-700"></div>
                         </div>
                         <div class="h-5 w-12 rounded-full bg-zinc-200 dark:bg-zinc-700"></div>
                     </div>
 
-                    <div class="grid grid-cols-3 gap-2">
+                    <div class="mt-4 grid grid-cols-3 gap-3">
                         @foreach (range(1, 3) as $j)
-                            <div wire:key="sk-project-{{ $i }}-stat-{{ $j }}" class="h-16 rounded-lg bg-zinc-100 dark:bg-zinc-700/50"></div>
+                            <div wire:key="sk-project-{{ $i }}-stat-{{ $j }}" class="space-y-2">
+                                <div class="h-5 w-8 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                                <div class="h-3 w-14 rounded bg-zinc-100 dark:bg-zinc-700/50"></div>
+                            </div>
                         @endforeach
                     </div>
                 </div>
@@ -122,18 +132,22 @@ new class extends Component
     @elseif (empty($projects))
         <flux:text>{{ __('Aucun projet.') }}</flux:text>
     @else
-        <div wire:loading.class="opacity-60" wire:target="refresh" class="grid auto-rows-min gap-4 transition-opacity md:grid-cols-3">
+        <div
+            wire:loading.class="opacity-60"
+            wire:target="refresh"
+            class="grid gap-4 transition-opacity md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5"
+        >
             @foreach ($projects as $project)
-                <flux:card
+                <a
                     wire:key="project-{{ $project['id'] }}"
-                    :href="route('kanban', ['project' => $project['id']])"
+                    href="{{ route('kanban', ['project' => $project['id']]) }}"
                     wire:navigate
-                    class="flex flex-col gap-4 transition hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                    class="block rounded-xl border border-zinc-300/70 bg-white p-4 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700/40"
                 >
-                    <div class="flex items-start justify-between gap-2">
-                        <div>
-                            <flux:heading size="lg">{{ $project['name'] ?? '' }}</flux:heading>
-                            <flux:text class="text-xs">{{ $project['code'] ?? '' }}</flux:text>
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0 space-y-0.5">
+                            <div class="truncate text-sm font-medium text-zinc-900 dark:text-white">{{ $project['name'] ?? '' }}</div>
+                            <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ $project['code'] ?? '' }}</div>
                         </div>
 
                         <flux:badge size="sm" :color="($project['state'] ?? 0) === 1 ? 'green' : 'zinc'">
@@ -141,29 +155,29 @@ new class extends Component
                         </flux:badge>
                     </div>
 
-                    <div class="grid grid-cols-3 gap-2 text-center">
-                        <div class="rounded-lg bg-amber-500/10 p-2">
-                            <div class="text-xl font-semibold text-amber-600 dark:text-amber-400">
+                    <div class="mt-4 grid grid-cols-3 gap-3">
+                        <div>
+                            <div class="text-lg font-medium text-zinc-900 dark:text-white">
                                 {{ number_format((int) ($project['pending_ticket'] ?? 0), 0, ',', ' ') }}
                             </div>
                             <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('En attente') }}</div>
                         </div>
 
-                        <div class="rounded-lg bg-blue-500/10 p-2">
-                            <div class="text-xl font-semibold text-blue-600 dark:text-blue-400">
+                        <div>
+                            <div class="text-lg font-medium text-zinc-900 dark:text-white">
                                 {{ number_format((int) ($project['in_progress_ticket'] ?? 0), 0, ',', ' ') }}
                             </div>
                             <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('En cours') }}</div>
                         </div>
 
-                        <div class="rounded-lg bg-green-500/10 p-2">
-                            <div class="text-xl font-semibold text-green-600 dark:text-green-400">
+                        <div>
+                            <div class="text-lg font-medium text-zinc-900 dark:text-white">
                                 {{ number_format((int) ($project['closed_ticket'] ?? 0), 0, ',', ' ') }}
                             </div>
                             <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Clôturés') }}</div>
                         </div>
                     </div>
-                </flux:card>
+                </a>
             @endforeach
         </div>
     @endif

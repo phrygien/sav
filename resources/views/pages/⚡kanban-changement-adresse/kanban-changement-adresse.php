@@ -5,6 +5,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On; // NEW
 use Livewire\Component;
 
 new class extends Component
@@ -63,6 +64,9 @@ new class extends Component
 
     /** Filtre « Ticket qui m'est assigné » */
     public bool $mine = false;
+
+    /** NEW : filtre posé depuis le panneau « Répartition » (id Cosmia de l'utilisateur) */
+    public ?int $userFilterId = null;
 
     /** Id Cosmia de l'utilisateur connecté (affichage uniquement, l'action utilise currentUserId()) */
     public ?int $meId = null;
@@ -186,6 +190,7 @@ new class extends Component
         $this->loadAll(refreshMineCount: false);
     }
 
+    // CHANGED : désélectionne la carte utilisateur quand « mes tickets » est activé
     public function toggleMine(): void
     {
         if (! $this->ready) {
@@ -194,7 +199,28 @@ new class extends Component
 
         $this->mine = ! $this->mine;
 
+        if ($this->mine && $this->userFilterId !== null) {
+            $this->userFilterId = null;
+            $this->dispatch('user-filter-sync', userId: null);
+        }
+
         // Le compteur ne change pas en activant/désactivant le filtre
+        $this->loadAll(refreshMineCount: false);
+    }
+
+    // NEW : filtre venant du panneau « Répartition »
+    #[On('user-filter-changed')]
+    public function filterByUser(?int $userId = null): void
+    {
+        // Réservé aux admins : seuls eux voient le panneau de répartition
+        if (! $this->ready || ! $this->canAssignTickets()) {
+            return;
+        }
+
+        $this->userFilterId = $userId;
+        $this->mine         = false; // les deux filtres s'excluent
+
+        // Le compteur « mes tickets » ne dépend pas de ce filtre
         $this->loadAll(refreshMineCount: false);
     }
 
@@ -274,6 +300,8 @@ new class extends Component
                 'status' => self::STATUSES[$to]['title'],
             ])
         );
+
+        $this->dispatch('tickets-changed'); // NEW : rafraîchit la répartition
     }
 
     /**
@@ -335,8 +363,9 @@ new class extends Component
 
         $me = $this->currentUserId();
 
-        // Filtre « mes tickets » actif et ticket confié à quelqu'un d'autre : il quitte le board
-        $leavesBoard = $this->mine && $userId !== $me;
+        // CHANGED : filtre « mes tickets » OU « utilisateur » actif, et ticket confié à quelqu'un d'autre : il quitte le board
+        $activeFilterId = $this->mine ? $me : $this->userFilterId;
+        $leavesBoard    = $activeFilterId !== null && $userId !== $activeFilterId;
         $num = '';
 
         foreach ($this->columns as $status => $column) {
@@ -377,6 +406,8 @@ new class extends Component
                 ? __('Ticket :num pris en charge', ['num' => $num])
                 : __('Ticket :num assigné à :name', ['num' => $num, 'name' => $name])
         );
+
+        $this->dispatch('tickets-changed'); // NEW : rafraîchit la répartition
     }
 
     /** Payload du JWT Cosmia (session), ou tableau vide. */
@@ -550,7 +581,8 @@ new class extends Component
             'project_id' => $this->projectId === 'all' ? null : $this->projectId,
             'label_id'   => self::LOCKED_LABEL ?? $this->labelId,
             'search'     => trim($this->search),
-            'user_id'    => $this->mine ? $this->currentUserId() : null,
+            // CHANGED : « mes tickets » OU utilisateur choisi dans la répartition
+            'user_id'    => $this->mine ? $this->currentUserId() : $this->userFilterId,
         ], fn ($value) => $value !== null && $value !== '');
     }
 
@@ -618,3 +650,4 @@ new class extends Component
         ];
     }
 };
+?>

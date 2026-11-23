@@ -3,7 +3,7 @@
 <head>
     @include('partials.head')
 </head>
-<body class="min-h-screen bg-white dark:bg-zinc-800 antialiased">
+<body class="min-h-screen bg-zinc-100 dark:bg-zinc-800 antialiased">
 @php
     $user = auth()->user();
     $initials = collect(explode(' ', trim($user?->name ?? '')))
