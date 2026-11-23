@@ -31,11 +31,11 @@ services:
 
         # ── Healthcheck ─────────────────────────
         healthcheck:
-            test: ["CMD-SHELL", "curl -fs http://127.0.0.1/up || exit 1"]
+            test: ["CMD-SHELL", "curl -fs -o /dev/null http://127.0.0.1/up || exit 1"]
             interval: 30s
             timeout: 5s
             retries: 3
-            start_period: 40s
+            start_period: 60s
 
         # ── Logs (évite de saturer le disque) ───
         logging:
@@ -51,8 +51,6 @@ services:
             - traefik.http.routers.cosm-ia.entrypoints=websecure
             - traefik.http.routers.cosm-ia.tls.certresolver=letsencrypt
             - traefik.http.services.cosm-ia.loadbalancer.server.port=80
-            - traefik.http.services.cosm-ia.loadbalancer.healthcheck.path=/up
-            - traefik.http.services.cosm-ia.loadbalancer.healthcheck.interval=30s
 
 volumes:
     cosm-ia-storage:
