@@ -219,8 +219,9 @@ new class extends Component
 
 {{-- wire:init sur un <div> : Blade n'accepte pas @if dans les attributs d'un composant <flux:...> --}}
 <div @if (! $loaded) wire:init="load" @endif>
-    <flux:card class="flex flex-col gap-4 bg-zinc-100 dark:bg-zinc-700/60 border-zinc-200 dark:border-zinc-600">
-        <div class="flex flex-wrap items-start justify-between gap-4">
+    <flux:card class="flex flex-col gap-0 overflow-hidden p-0 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-600">
+        {{-- En-tête séparé du contenu par une bordure --}}
+        <div class="flex flex-wrap items-start justify-between gap-4 border-b border-zinc-200 px-6 py-4 dark:border-zinc-600">
             <div>
                 <flux:heading size="lg">{{ __('Classification par catégorie') }}</flux:heading>
                 <flux:text class="text-sm">
@@ -255,189 +256,218 @@ new class extends Component
             </div>
         </div>
 
-        <div class="flex flex-wrap items-center gap-2">
-            @if ($loaded)
-                <flux:button size="sm" :variant="$projectId === 'all' ? 'primary' : 'outline'" wire:click="setProject('all')">
-                    {{ __('Tous les projets') }}
-                </flux:button>
-
-                @foreach ($projects as $project)
-                    <flux:button
-                        wire:key="pf-{{ $project['id'] }}"
-                        size="sm"
-                        :variant="(string) $projectId === (string) $project['id'] ? 'primary' : 'outline'"
-                        wire:click="setProject('{{ $project['id'] }}')"
-                    >
-                        {{ $project['name'] ?? '' }}
+        <div class="flex flex-col gap-4 p-6">
+            <div class="flex flex-wrap items-center gap-2">
+                @if ($loaded)
+                    <flux:button size="sm" :variant="$projectId === 'all' ? 'primary' : 'outline'" wire:click="setProject('all')">
+                        {{ __('Tous les projets') }}
                     </flux:button>
-                @endforeach
-            @else
-                <div class="flex animate-pulse gap-2">
-                    @foreach (range(1, 3) as $i)
-                        <div wire:key="sk-filter-{{ $i }}" class="h-8 w-24 rounded-md bg-zinc-200 dark:bg-zinc-600"></div>
-                    @endforeach
-                </div>
-            @endif
-        </div>
 
-        @if ($error)
-            <flux:callout variant="danger" icon="exclamation-circle" :heading="$error">
-                <x-slot name="actions">
-                    <flux:button size="sm" wire:click="setProject('{{ $projectId }}', true)">{{ __('Réessayer') }}</flux:button>
-                </x-slot>
-            </flux:callout>
-        @endif
-
-        {{-- Conteneur relatif : le squelette (Livewire) recouvre le graphique (Alpine) --}}
-        <div
-            class="relative h-96 transition-opacity"
-            wire:loading.class="opacity-50"
-            wire:target="setProject"
-        >
-            @if (! $loaded)
-                <div class="absolute inset-0 z-10 flex animate-pulse items-end gap-2 rounded-lg bg-zinc-100 p-4 dark:bg-zinc-700/60">
-                    @foreach ([40, 65, 50, 80, 60, 90, 70, 55] as $h)
-                        <div wire:key="sk-bar-{{ $loop->index }}" class="flex-1 rounded-t bg-zinc-200 dark:bg-zinc-600" style="height: {{ $h }}%"></div>
+                    @foreach ($projects as $project)
+                        <flux:button
+                            wire:key="pf-{{ $project['id'] }}"
+                            size="sm"
+                            :variant="(string) $projectId === (string) $project['id'] ? 'primary' : 'outline'"
+                            wire:click="setProject('{{ $project['id'] }}')"
+                        >
+                            {{ $project['name'] ?? '' }}
+                        </flux:button>
                     @endforeach
-                </div>
+                @else
+                    <div class="flex animate-pulse gap-2">
+                        @foreach (range(1, 3) as $i)
+                            <div wire:key="sk-filter-{{ $i }}" class="h-8 w-24 rounded-md bg-zinc-200 dark:bg-zinc-600"></div>
+                        @endforeach
+                    </div>
+                @endif
+            </div>
+
+            @if ($error)
+                <flux:callout variant="danger" icon="exclamation-circle" :heading="$error">
+                    <x-slot name="actions">
+                        <flux:button size="sm" wire:click="setProject('{{ $projectId }}', true)">{{ __('Réessayer') }}</flux:button>
+                    </x-slot>
+                </flux:callout>
             @endif
 
+            {{-- Conteneur relatif : le squelette (Livewire) recouvre le graphique (Alpine) --}}
             <div
-                wire:ignore
-                class="h-full"
-                x-data="(() => {
-                    let chart = null;
-                    let pending = null;
+                class="relative h-96 transition-opacity"
+                wire:loading.class="opacity-50"
+                wire:target="setProject"
+            >
+                @if (! $loaded)
+                    <div class="absolute inset-0 z-10 flex animate-pulse items-end gap-2 rounded-lg bg-zinc-100 p-4 dark:bg-zinc-700/60">
+                        @foreach ([40, 65, 50, 80, 60, 90, 70, 55] as $h)
+                            <div wire:key="sk-bar-{{ $loop->index }}" class="flex-1 rounded-t bg-zinc-200 dark:bg-zinc-600" style="height: {{ $h }}%"></div>
+                        @endforeach
+                    </div>
+                @endif
 
-                    const colors = () => {
-                        const dark = document.documentElement.classList.contains('dark');
-                        return {
-                            text: dark ? '#a1a1aa' : '#52525b',
-                            grid: dark ? 'rgba(161,161,170,0.15)' : 'rgba(82,82,91,0.15)',
+                <div
+                    wire:ignore
+                    class="h-full"
+                    x-data="(() => {
+                        let chart = null;
+                        let pending = null;
+
+                        const colors = () => {
+                            const dark = document.documentElement.classList.contains('dark');
+                            return {
+                                text: dark ? '#a1a1aa' : '#52525b',
+                                grid: dark ? 'rgba(161,161,170,0.15)' : 'rgba(82,82,91,0.10)',
+                            };
                         };
-                    };
 
-                    const datasets = (series) => series.map(s => ({
-                        label: s.name,
-                        data: s.data,
-                        borderColor: s.color,
-                        backgroundColor: s.color,
-                        borderWidth: 2,
-                        tension: 0.3,
-                        pointRadius: 2,
-                    }));
+                        // Une courbe par catégorie, aire translucide (couleur hex + alpha ~12 %)
+                        const datasets = (series) => series.map(s => ({
+                            label: s.name,
+                            data: s.data,
+                            borderColor: s.color,
+                            backgroundColor: s.color + '1F',
+                            borderWidth: 1,
+                            fill: true,
+                            tension: 0,
+                            pointStyle: 'rect',
+                            pointRadius: 2,
+                            pointHoverRadius: 4,
+                            pointBackgroundColor: s.color,
+                            pointBorderColor: s.color,
+                        }));
 
-                    return {
-                        init() {
-                            const c = colors();
-                            const initial = @js($chart);
+                        return {
+                            init() {
+                                const c = colors();
+                                const initial = @js($chart);
 
-                            chart = new Chart(this.$refs.canvas, {
-                                type: 'line',
-                                data: { labels: initial.labels, datasets: datasets(initial.series) },
-                                options: {
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    interaction: { mode: 'index', intersect: false },
-                                    plugins: {
-                                        legend: { position: 'bottom', labels: { color: c.text, usePointStyle: true } },
-                                        tooltip: {
-                                            callbacks: {
-                                                footer: (items) => 'Total : ' + items.reduce((sum, i) => sum + i.parsed.y, 0),
+                                chart = new Chart(this.$refs.canvas, {
+                                    type: 'line',
+                                    data: { labels: initial.labels, datasets: datasets(initial.series) },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        interaction: { mode: 'index', intersect: false },
+                                        plugins: {
+                                            legend: {
+                                                position: 'bottom',
+                                                labels: {
+                                                    color: c.text,
+                                                    usePointStyle: true,
+                                                    pointStyle: 'rect',
+                                                    boxWidth: 12,
+                                                    boxHeight: 12,
+                                                    padding: 16,
+                                                    font: { size: 12 },
+                                                },
+                                            },
+                                            tooltip: {
+                                                itemSort: (a, b) => b.parsed.y - a.parsed.y,
+                                                callbacks: {
+                                                    footer: (items) => 'Total : ' + items.reduce((sum, i) => sum + i.parsed.y, 0),
+                                                },
+                                            },
+                                        },
+                                        scales: {
+                                            x: {
+                                                border: { display: false },
+                                                grid: { display: false },
+                                                ticks: { color: c.text, maxRotation: 30, minRotation: 30, font: { size: 12 } },
+                                            },
+                                            y: {
+                                                beginAtZero: true,
+                                                border: { display: false },
+                                                grid: { color: c.grid },
+                                                ticks: { color: c.text, precision: 0, padding: 8, font: { size: 12 } },
                                             },
                                         },
                                     },
-                                    scales: {
-                                        x: { ticks: { color: c.text }, grid: { color: c.grid } },
-                                        y: { beginAtZero: true, ticks: { color: c.text, precision: 0 }, grid: { color: c.grid } },
-                                    },
-                                },
-                            });
+                                });
 
-                            // Données reçues avant la création du graphique
-                            if (pending) {
-                                this.update(pending);
-                                pending = null;
-                            }
-                        },
+                                // Données reçues avant la création du graphique
+                                if (pending) {
+                                    this.update(pending);
+                                    pending = null;
+                                }
+                            },
 
-                        update(data) {
-                            if (! chart) {
-                                pending = data;
-                                return;
-                            }
+                            update(data) {
+                                if (! chart) {
+                                    pending = data;
+                                    return;
+                                }
 
-                            chart.data.labels = data.labels;
-                            chart.data.datasets = datasets(data.series);
-                            chart.update();
-                        },
+                                chart.data.labels = data.labels;
+                                chart.data.datasets = datasets(data.series);
+                                chart.update();
+                            },
 
-                        destroy() {
-                            chart?.destroy();
-                            chart = null;
-                        },
-                    };
-                })()"
-                x-on:partition-chart-updated.window="update($event.detail.chart)"
-            >
-                <canvas x-ref="canvas"></canvas>
+                            destroy() {
+                                chart?.destroy();
+                                chart = null;
+                            },
+                        };
+                    })()"
+                    x-on:partition-chart-updated.window="update($event.detail.chart)"
+                >
+                    <canvas x-ref="canvas"></canvas>
+                </div>
             </div>
         </div>
-
-        {{-- Mode tableau --}}
-        <flux:modal name="partition-table" class="w-full max-w-7xl">
-            <flux:heading size="lg" class="mb-4">{{ __('Classification par catégorie — Mode Tableau') }}</flux:heading>
-
-            @if (empty($dates))
-                <flux:text class="py-6 text-center">{{ __('Aucune donnée disponible.') }}</flux:text>
-            @else
-                @php $series = $chart['series']; @endphp
-
-                <div class="max-h-[60vh] overflow-auto">
-                    <table class="min-w-full border-collapse text-sm">
-                        <thead class="sticky top-0 z-10 bg-zinc-100 dark:bg-zinc-800">
-                        <tr>
-                            <th class="sticky left-0 z-20 bg-zinc-100 px-4 py-3 text-left font-semibold dark:bg-zinc-800">Date</th>
-                            @foreach ($series as $s)
-                                <th class="whitespace-nowrap px-4 py-3 text-center font-semibold">{{ $s['name'] }}</th>
-                            @endforeach
-                            <th class="px-4 py-3 text-center font-semibold">Total</th>
-                        </tr>
-                        </thead>
-
-                        <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
-                        @foreach ($dates as $i => $date)
-                            <tr wire:key="pr-{{ $i }}" class="hover:bg-zinc-100 dark:hover:bg-zinc-700/50">
-                                <td class="sticky left-0 whitespace-nowrap bg-white px-4 py-2 font-medium dark:bg-zinc-800">{{ $date }}</td>
-                                @php $rowTotal = 0; @endphp
-                                @foreach ($series as $s)
-                                    @php
-                                        $value = $s['data'][$i] ?? 0;
-                                        $rowTotal += $value;
-                                    @endphp
-                                    <td class="px-4 py-2 text-center {{ $value > 0 ? 'font-medium text-blue-500' : 'text-zinc-400' }}">{{ $value }}</td>
-                                @endforeach
-                                <td class="px-4 py-2 text-center font-bold">{{ $rowTotal }}</td>
-                            </tr>
-                        @endforeach
-                        </tbody>
-
-                        <tfoot class="sticky bottom-0 bg-zinc-100 font-bold dark:bg-zinc-800">
-                        <tr>
-                            <td class="sticky left-0 bg-zinc-100 px-4 py-3 dark:bg-zinc-800">Total</td>
-                            @foreach ($series as $s)
-                                <td class="px-4 py-3 text-center text-blue-500">{{ array_sum($s['data']) }}</td>
-                            @endforeach
-                            <td class="px-4 py-3 text-center">{{ $total }}</td>
-                        </tr>
-                        </tfoot>
-                    </table>
-                </div>
-
-                <flux:text class="mt-4 text-sm">
-                    <strong>{{ __('Période :') }}</strong> {{ count($dates) }} {{ __('jours') }}
-                </flux:text>
-            @endif
-        </flux:modal>
     </flux:card>
+
+    {{-- Mode tableau (hors de la carte pour ne pas être rogné par overflow-hidden) --}}
+    <flux:modal name="partition-table" class="w-full max-w-7xl">
+        <flux:heading size="lg" class="mb-4">{{ __('Classification par catégorie — Mode Tableau') }}</flux:heading>
+
+        @if (empty($dates))
+            <flux:text class="py-6 text-center">{{ __('Aucune donnée disponible.') }}</flux:text>
+        @else
+            @php $series = $chart['series']; @endphp
+
+            <div class="max-h-[60vh] overflow-auto">
+                <table class="min-w-full border-collapse text-sm">
+                    <thead class="sticky top-0 z-10 bg-zinc-100 dark:bg-zinc-800">
+                    <tr>
+                        <th class="sticky left-0 z-20 bg-zinc-100 px-4 py-3 text-left font-semibold dark:bg-zinc-800">Date</th>
+                        @foreach ($series as $s)
+                            <th class="whitespace-nowrap px-4 py-3 text-center font-semibold">{{ $s['name'] }}</th>
+                        @endforeach
+                        <th class="px-4 py-3 text-center font-semibold">Total</th>
+                    </tr>
+                    </thead>
+
+                    <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                    @foreach ($dates as $i => $date)
+                        <tr wire:key="pr-{{ $i }}" class="hover:bg-zinc-100 dark:hover:bg-zinc-700/50">
+                            <td class="sticky left-0 whitespace-nowrap bg-white px-4 py-2 font-medium dark:bg-zinc-800">{{ $date }}</td>
+                            @php $rowTotal = 0; @endphp
+                            @foreach ($series as $s)
+                                @php
+                                    $value = $s['data'][$i] ?? 0;
+                                    $rowTotal += $value;
+                                @endphp
+                                <td class="px-4 py-2 text-center {{ $value > 0 ? 'font-medium text-blue-500' : 'text-zinc-400' }}">{{ $value }}</td>
+                            @endforeach
+                            <td class="px-4 py-2 text-center font-bold">{{ $rowTotal }}</td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+
+                    <tfoot class="sticky bottom-0 bg-zinc-100 font-bold dark:bg-zinc-800">
+                    <tr>
+                        <td class="sticky left-0 bg-zinc-100 px-4 py-3 dark:bg-zinc-800">Total</td>
+                        @foreach ($series as $s)
+                            <td class="px-4 py-3 text-center text-blue-500">{{ array_sum($s['data']) }}</td>
+                        @endforeach
+                        <td class="px-4 py-3 text-center">{{ $total }}</td>
+                    </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <flux:text class="mt-4 text-sm">
+                <strong>{{ __('Période :') }}</strong> {{ count($dates) }} {{ __('jours') }}
+            </flux:text>
+        @endif
+    </flux:modal>
 </div>

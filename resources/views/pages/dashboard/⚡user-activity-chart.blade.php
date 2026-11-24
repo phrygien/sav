@@ -159,8 +159,9 @@ new class extends Component
 
 {{-- wire:init sur un <div> : Blade n'accepte pas @if dans les attributs d'un composant <flux:...> --}}
 <div @if (! $loaded) wire:init="load" @endif>
-    <flux:card class="flex flex-col gap-4 bg-zinc-100 dark:bg-zinc-700/60 border-zinc-200 dark:border-zinc-600">
-        <div class="flex items-start justify-between gap-3">
+    <flux:card class="flex flex-col gap-0 overflow-hidden p-0 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-600">
+        {{-- En-tête séparé du contenu par une bordure --}}
+        <div class="flex items-start justify-between gap-3 border-b border-zinc-200 px-6 py-4 dark:border-zinc-600">
             <flux:heading size="lg">{{ __('Statistiques par personne') }}</flux:heading>
 
             {{-- Les données sont gardées 2 min côté serveur : ce bouton force une mise à jour --}}
@@ -179,125 +180,156 @@ new class extends Component
             @endif
         </div>
 
-        <div class="grid gap-4 md:grid-cols-2">
-            <flux:select wire:model.live="month" :label="__('Mois')">
-                @foreach (\App\Services\CosmiaApi::monthOptions() as $value => $label)
-                    <flux:select.option :value="$value">{{ $label }}</flux:select.option>
-                @endforeach
-            </flux:select>
-
-            <flux:select wire:model.live="year" :label="__('Année')">
-                @foreach (\App\Services\CosmiaApi::yearOptions() as $value => $label)
-                    <flux:select.option :value="$value">{{ $label }}</flux:select.option>
-                @endforeach
-            </flux:select>
-        </div>
-
-        @if ($loaded)
-            @if ($error)
-                <flux:callout variant="danger" icon="exclamation-circle" :heading="$error">
-                    <x-slot name="actions">
-                        <flux:button size="sm" wire:click="refreshChart(true)">{{ __('Réessayer') }}</flux:button>
-                    </x-slot>
-                </flux:callout>
-            @elseif ($empty)
-                <flux:text class="py-2 text-center">{{ __('Aucune donnée disponible.') }}</flux:text>
-            @endif
-        @endif
-
-        {{-- Conteneur relatif : le squelette (Livewire) recouvre le graphique (Alpine) --}}
-        <div
-            class="relative h-[32rem] transition-opacity"
-            wire:loading.class="opacity-50"
-            wire:target="month,year,refreshChart"
-        >
-            @if (! $loaded)
-                <div class="absolute inset-0 z-10 flex animate-pulse items-end gap-2 rounded-lg bg-zinc-100 p-4 dark:bg-zinc-700/60">
-                    @foreach ([40, 65, 50, 80, 60, 90, 70, 55, 75, 45] as $h)
-                        <div wire:key="sk-bar-{{ $loop->index }}" class="flex-1 rounded-t bg-zinc-200 dark:bg-zinc-600" style="height: {{ $h }}%"></div>
+        <div class="flex flex-col gap-4 p-6">
+            <div class="grid gap-4 md:grid-cols-2">
+                <flux:select wire:model.live="month" :label="__('Mois')">
+                    @foreach (\App\Services\CosmiaApi::monthOptions() as $value => $label)
+                        <flux:select.option :value="$value">{{ $label }}</flux:select.option>
                     @endforeach
-                </div>
+                </flux:select>
+
+                <flux:select wire:model.live="year" :label="__('Année')">
+                    @foreach (\App\Services\CosmiaApi::yearOptions() as $value => $label)
+                        <flux:select.option :value="$value">{{ $label }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+            </div>
+
+            @if ($loaded)
+                @if ($error)
+                    <flux:callout variant="danger" icon="exclamation-circle" :heading="$error">
+                        <x-slot name="actions">
+                            <flux:button size="sm" wire:click="refreshChart(true)">{{ __('Réessayer') }}</flux:button>
+                        </x-slot>
+                    </flux:callout>
+                @elseif ($empty)
+                    <flux:text class="py-2 text-center">{{ __('Aucune donnée disponible.') }}</flux:text>
+                @endif
             @endif
 
+            {{-- Conteneur relatif : le squelette (Livewire) recouvre le graphique (Alpine) --}}
             <div
-                wire:ignore
-                class="h-full"
-                x-data="(() => {
-                    let chart = null;
-                    let pending = null;
+                class="relative h-[32rem] transition-opacity"
+                wire:loading.class="opacity-50"
+                wire:target="month,year,refreshChart"
+            >
+                @if (! $loaded)
+                    <div class="absolute inset-0 z-10 flex animate-pulse items-end gap-2 rounded-lg bg-zinc-100 p-4 dark:bg-zinc-700/60">
+                        @foreach ([40, 65, 50, 80, 60, 90, 70, 55, 75, 45] as $h)
+                            <div wire:key="sk-bar-{{ $loop->index }}" class="flex-1 rounded-t bg-zinc-200 dark:bg-zinc-600" style="height: {{ $h }}%"></div>
+                        @endforeach
+                    </div>
+                @endif
 
-                    const colors = () => {
-                        const dark = document.documentElement.classList.contains('dark');
-                        return {
-                            text: dark ? '#a1a1aa' : '#52525b',
-                            grid: dark ? 'rgba(161,161,170,0.15)' : 'rgba(82,82,91,0.15)',
+                <div
+                    wire:ignore
+                    class="h-full"
+                    x-data="(() => {
+                        let chart = null;
+                        let pending = null;
+
+                        const colors = () => {
+                            const dark = document.documentElement.classList.contains('dark');
+                            return {
+                                text: dark ? '#a1a1aa' : '#52525b',
+                                grid: dark ? 'rgba(161,161,170,0.15)' : 'rgba(82,82,91,0.10)',
+                            };
                         };
-                    };
 
-                    const datasets = (series) => series.map(s => ({
-                        label: s.name,
-                        data: s.data,
-                        backgroundColor: s.color,
-                        borderWidth: 0,
-                        maxBarThickness: 36,
-                    }));
+                        // Une courbe par agent, aire translucide (couleur hex + alpha ~12 %)
+                        const datasets = (series) => series.map(s => ({
+                            label: s.name,
+                            data: s.data,
+                            borderColor: s.color,
+                            backgroundColor: s.color + '1F',
+                            borderWidth: 1,
+                            fill: true,
+                            tension: 0,
+                            pointStyle: 'rect',
+                            pointRadius: 2,
+                            pointHoverRadius: 4,
+                            pointBackgroundColor: s.color,
+                            pointBorderColor: s.color,
+                        }));
 
-                    return {
-                        init() {
-                            const c = colors();
-                            const initial = @js($chart);
+                        return {
+                            init() {
+                                const c = colors();
+                                const initial = @js($chart);
 
-                            chart = new Chart(this.$refs.canvas, {
-                                type: 'bar',
-                                data: { labels: initial.labels, datasets: datasets(initial.series) },
-                                options: {
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    interaction: { mode: 'index', intersect: false },
-                                    plugins: {
-                                        legend: { position: 'bottom', labels: { color: c.text, usePointStyle: true } },
-                                        tooltip: {
-                                            itemSort: (a, b) => b.parsed.y - a.parsed.y,
-                                            callbacks: {
-                                                label: (ctx) => ' ' + ctx.dataset.label + ' : ' + ctx.parsed.y + ' Email',
-                                                footer: (items) => 'Total : ' + items.reduce((sum, i) => sum + i.parsed.y, 0) + ' Email',
+                                chart = new Chart(this.$refs.canvas, {
+                                    type: 'line',
+                                    data: { labels: initial.labels, datasets: datasets(initial.series) },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        interaction: { mode: 'index', intersect: false },
+                                        plugins: {
+                                            legend: {
+                                                position: 'bottom',
+                                                labels: {
+                                                    color: c.text,
+                                                    usePointStyle: true,
+                                                    pointStyle: 'rect',
+                                                    boxWidth: 12,
+                                                    boxHeight: 12,
+                                                    padding: 16,
+                                                    font: { size: 12 },
+                                                },
+                                            },
+                                            tooltip: {
+                                                itemSort: (a, b) => b.parsed.y - a.parsed.y,
+                                                callbacks: {
+                                                    label: (ctx) => ' ' + ctx.dataset.label + ' : ' + ctx.parsed.y + ' Email',
+                                                    footer: (items) => 'Total : ' + items.reduce((sum, i) => sum + i.parsed.y, 0) + ' Email',
+                                                },
+                                            },
+                                        },
+                                        scales: {
+                                            x: {
+                                                border: { display: false },
+                                                grid: { display: false },
+                                                ticks: { color: c.text, maxRotation: 30, minRotation: 30, font: { size: 12 } },
+                                            },
+                                            y: {
+                                                beginAtZero: true,
+                                                border: { display: false },
+                                                title: { display: true, text: 'Email(s)', color: c.text },
+                                                grid: { color: c.grid },
+                                                ticks: { color: c.text, precision: 0, padding: 8, font: { size: 12 } },
                                             },
                                         },
                                     },
-                                    scales: {
-                                        x: { stacked: true, ticks: { color: c.text }, grid: { display: false } },
-                                        y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Email(s)', color: c.text }, ticks: { color: c.text, precision: 0 }, grid: { color: c.grid } },
-                                    },
-                                },
-                            });
+                                });
 
-                            // Données reçues avant la création du graphique
-                            if (pending) {
-                                this.update(pending);
-                                pending = null;
-                            }
-                        },
+                                // Données reçues avant la création du graphique
+                                if (pending) {
+                                    this.update(pending);
+                                    pending = null;
+                                }
+                            },
 
-                        update(data) {
-                            if (! chart) {
-                                pending = data;
-                                return;
-                            }
+                            update(data) {
+                                if (! chart) {
+                                    pending = data;
+                                    return;
+                                }
 
-                            chart.data.labels = data.labels;
-                            chart.data.datasets = datasets(data.series);
-                            chart.update();
-                        },
+                                chart.data.labels = data.labels;
+                                chart.data.datasets = datasets(data.series);
+                                chart.update();
+                            },
 
-                        destroy() {
-                            chart?.destroy();
-                            chart = null;
-                        },
-                    };
-                })()"
-                x-on:user-activity-chart-updated.window="update($event.detail.chart)"
-            >
-                <canvas x-ref="canvas"></canvas>
+                            destroy() {
+                                chart?.destroy();
+                                chart = null;
+                            },
+                        };
+                    })()"
+                    x-on:user-activity-chart-updated.window="update($event.detail.chart)"
+                >
+                    <canvas x-ref="canvas"></canvas>
+                </div>
             </div>
         </div>
     </flux:card>

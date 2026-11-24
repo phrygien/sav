@@ -23,7 +23,7 @@ new class extends Component
 
     public string $projectId = 'all';
 
-    public array $chart = ['labels' => [], 'values' => []];
+    public array $chart = ['labels' => [], 'values' => [], 'colors' => []];
 
     public int $total = 0;
 
@@ -62,7 +62,7 @@ new class extends Component
         $this->loadData();
         $this->loaded = true;
 
-        $this->dispatch('donut-chart-updated', chart: $this->chart);
+        $this->dispatch('requests-chart-updated', chart: $this->chart);
     }
 
     public function updated(string $name): void
@@ -77,13 +77,14 @@ new class extends Component
     {
         $this->loadData($force);
 
-        $this->dispatch('donut-chart-updated', chart: $this->chart);
+        $this->dispatch('requests-chart-updated', chart: $this->chart);
     }
 
     // Clé liée à la session : les droits de l'API dépendent du token de l'utilisateur
+    // (suffixe v3 : le cache contient maintenant les couleurs par catégorie)
     private function cacheKey(): string
     {
-        return 'cosmia.dash.donut.'.sha1((string) session('cosmia_token'))
+        return 'cosmia.dash.donut.v3.'.sha1((string) session('cosmia_token'))
             .'.'.$this->month.'.'.$this->year.'.'.$this->projectId;
     }
 
@@ -155,17 +156,33 @@ new class extends Component
             ]);
         } catch (\RuntimeException $e) {
             $this->error = $e->getMessage();
-            $this->apply(['chart' => ['labels' => [], 'values' => []], 'total' => 0]);
+            $this->apply(['chart' => ['labels' => [], 'values' => [], 'colors' => []], 'total' => 0]);
 
             return;
         }
 
-        $details = collect($response['details'] ?? []);
+        $details = collect($response['details'] ?? [])->values();
+
+        // Couleur attribuée par catégorie (ordre alphabétique) : elle ne dépend pas du classement
+        $colorByLabel = $details
+            ->map(fn ($d) => (string) ($d['label_name'] ?? '-'))
+            ->unique()
+            ->sort()
+            ->values()
+            ->mapWithKeys(fn ($label, $i) => [$label => self::PALETTE[$i % count(self::PALETTE)]]);
+
+        // Classement du plus grand au plus petit
+        $sorted = $details
+            ->sortByDesc(fn ($d) => (int) ($d['nb'] ?? 0))
+            ->values();
+
+        $labels = $sorted->map(fn ($d) => (string) ($d['label_name'] ?? '-'));
 
         $data = [
             'chart' => [
-                'labels' => $details->map(fn ($d) => ($d['label_name'] ?? '-').' ('.(int) ($d['nb'] ?? 0).')')->all(),
-                'values' => $details->map(fn ($d) => (int) ($d['nb'] ?? 0))->all(),
+                'labels' => $labels->all(),
+                'values' => $sorted->map(fn ($d) => (int) ($d['nb'] ?? 0))->all(),
+                'colors' => $labels->map(fn ($label) => $colorByLabel[$label])->all(),
             ],
             'total' => (int) $details->sum(fn ($d) => (int) ($d['nb'] ?? 0)),
         ];
@@ -184,8 +201,9 @@ new class extends Component
 
 {{-- wire:init sur un <div> : Blade n'accepte pas @if dans les attributs d'un composant <flux:...> --}}
 <div @if (! $loaded) wire:init="load" @endif>
-    <flux:card class="flex flex-col gap-4 bg-zinc-100 dark:bg-zinc-700/60 border-zinc-200 dark:border-zinc-600">
-        <div class="flex items-start justify-between gap-3">
+    <flux:card class="flex flex-col gap-0 overflow-hidden p-0 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-600">
+        {{-- En-tête séparé du contenu par une bordure --}}
+        <div class="flex items-start justify-between gap-3 border-b border-zinc-200 px-6 py-4 dark:border-zinc-600">
             <flux:heading size="lg">{{ __('Répartition selon le type de demande') }}</flux:heading>
 
             {{-- Les données sont gardées 2 min côté serveur : ce bouton force une mise à jour --}}
@@ -204,122 +222,182 @@ new class extends Component
             @endif
         </div>
 
-        <div class="grid gap-4 md:grid-cols-3">
-            <flux:select wire:model.live="month" :label="__('Mois')">
-                @foreach (\App\Services\CosmiaApi::monthOptions() as $value => $label)
-                    <flux:select.option :value="$value">{{ $label }}</flux:select.option>
-                @endforeach
-            </flux:select>
+        <div class="flex flex-col gap-4 p-6">
+            <div class="grid gap-4 md:grid-cols-3">
+                <flux:select wire:model.live="month" :label="__('Mois')">
+                    @foreach (\App\Services\CosmiaApi::monthOptions() as $value => $label)
+                        <flux:select.option :value="$value">{{ $label }}</flux:select.option>
+                    @endforeach
+                </flux:select>
 
-            <flux:select wire:model.live="year" :label="__('Année')">
-                @foreach (\App\Services\CosmiaApi::yearOptions() as $value => $label)
-                    <flux:select.option :value="$value">{{ $label }}</flux:select.option>
-                @endforeach
-            </flux:select>
+                <flux:select wire:model.live="year" :label="__('Année')">
+                    @foreach (\App\Services\CosmiaApi::yearOptions() as $value => $label)
+                        <flux:select.option :value="$value">{{ $label }}</flux:select.option>
+                    @endforeach
+                </flux:select>
 
-            <flux:select wire:model.live="projectId" :label="__('Par projet')">
-                <flux:select.option value="all">{{ __('Tous') }}</flux:select.option>
-                @foreach ($projects as $project)
-                    <flux:select.option :value="$project['id']">{{ $project['name'] ?? '' }}</flux:select.option>
-                @endforeach
-            </flux:select>
-        </div>
+                <flux:select wire:model.live="projectId" :label="__('Par projet')">
+                    <flux:select.option value="all">{{ __('Tous') }}</flux:select.option>
+                    @foreach ($projects as $project)
+                        <flux:select.option :value="$project['id']">{{ $project['name'] ?? '' }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+            </div>
 
-        @if ($error)
-            <flux:callout variant="danger" icon="exclamation-circle" :heading="$error">
-                <x-slot name="actions">
-                    <flux:button size="sm" wire:click="refreshChart(true)">{{ __('Réessayer') }}</flux:button>
-                </x-slot>
-            </flux:callout>
-        @endif
-
-        <div class="text-center">
-            @if ($loaded)
-                <div class="text-4xl font-bold text-red-500">{{ number_format($total, 0, ',', ' ') }}</div>
-            @else
-                <div class="mx-auto h-10 w-20 animate-pulse rounded bg-zinc-200 dark:bg-zinc-600"></div>
-            @endif
-            <div class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{{ __('Total demandes') }}</div>
-        </div>
-
-        {{-- Conteneur relatif : le squelette (Livewire) recouvre le graphique (Alpine) --}}
-        <div
-            class="relative h-96 transition-opacity"
-            wire:loading.class="opacity-50"
-            wire:target="month,year,projectId,refreshChart"
-        >
-            @if (! $loaded)
-                <div class="absolute inset-0 z-10 flex animate-pulse items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-700/60">
-                    <div class="size-56 rounded-full border-[2.5rem] border-zinc-200 dark:border-zinc-600"></div>
-                </div>
+            @if ($error)
+                <flux:callout variant="danger" icon="exclamation-circle" :heading="$error">
+                    <x-slot name="actions">
+                        <flux:button size="sm" wire:click="refreshChart(true)">{{ __('Réessayer') }}</flux:button>
+                    </x-slot>
+                </flux:callout>
             @endif
 
+            <div class="text-center">
+                @if ($loaded)
+                    <div class="text-4xl font-bold text-red-500">{{ number_format($total, 0, ',', ' ') }}</div>
+                @else
+                    <div class="mx-auto h-10 w-20 animate-pulse rounded bg-zinc-200 dark:bg-zinc-600"></div>
+                @endif
+                <div class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{{ __('Total demandes') }}</div>
+            </div>
+
+            {{-- Conteneur relatif : le squelette (Livewire) recouvre le graphique (Alpine) --}}
             <div
-                wire:ignore
-                class="h-full"
-                x-data="(() => {
-                    let chart = null;
-                    let pending = null;
-                    const palette = @js($this::PALETTE);
+                class="relative h-96 transition-opacity"
+                wire:loading.class="opacity-50"
+                wire:target="month,year,projectId,refreshChart"
+            >
+                @if (! $loaded)
+                    <div class="absolute inset-0 z-10 flex animate-pulse flex-col justify-center gap-3 rounded-lg bg-zinc-100 p-4 dark:bg-zinc-700/60">
+                        @foreach ([90, 80, 75, 70, 65, 60, 55, 50, 45, 40] as $w)
+                            <div wire:key="sk-bar-{{ $loop->index }}" class="h-5 rounded-r bg-zinc-200 dark:bg-zinc-600" style="width: {{ $w }}%"></div>
+                        @endforeach
+                    </div>
+                @endif
 
-                    const textColor = () => document.documentElement.classList.contains('dark') ? '#a1a1aa' : '#52525b';
+                <div
+                    wire:ignore
+                    class="h-full"
+                    x-data="(() => {
+                        let chart = null;
+                        let pending = null;
 
-                    return {
-                        init() {
-                            const initial = @js($chart);
+                        const colors = () => {
+                            const dark = document.documentElement.classList.contains('dark');
+                            return {
+                                text: dark ? '#a1a1aa' : '#52525b',
+                                grid: dark ? 'rgba(161,161,170,0.15)' : 'rgba(82,82,91,0.10)',
+                            };
+                        };
 
-                            chart = new Chart(this.$refs.canvas, {
-                                type: 'doughnut',
-                                data: {
-                                    labels: initial.labels,
-                                    datasets: [{ data: initial.values, backgroundColor: palette, borderWidth: 0 }],
-                                },
-                                options: {
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    cutout: '55%',
-                                    plugins: {
-                                        legend: { position: 'bottom', labels: { color: textColor(), usePointStyle: true } },
-                                        tooltip: {
-                                            callbacks: {
-                                                label: (ctx) => {
-                                                    const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                                                    const pct = total ? ((ctx.parsed / total) * 100).toFixed(1) : 0;
-                                                    return ' ' + ctx.parsed + ' (' + pct + '%)';
+                        const fmt = (n) => Number(n).toLocaleString('fr-FR');
+
+                        return {
+                            init() {
+                                const c = colors();
+                                const initial = @js($chart);
+
+                                chart = new Chart(this.$refs.canvas, {
+                                    type: 'bar',
+                                    data: {
+                                        labels: initial.labels,
+                                        datasets: [{
+                                            label: 'Demandes',
+                                            data: initial.values,
+                                            backgroundColor: initial.colors,
+                                            borderColor: initial.colors,
+                                            borderWidth: 1,
+                                            barPercentage: 0.8,
+                                            categoryPercentage: 0.9,
+                                            maxBarThickness: 28,
+                                        }],
+                                    },
+                                    options: {
+                                        indexAxis: 'y',
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        interaction: { mode: 'nearest', axis: 'y', intersect: false },
+                                        plugins: {
+                                            legend: {
+                                                position: 'bottom',
+                                                // Une entrée de légende par catégorie (et non une seule pour le dataset)
+                                                onClick: () => {},
+                                                labels: {
+                                                    color: c.text,
+                                                    boxWidth: 12,
+                                                    boxHeight: 12,
+                                                    padding: 16,
+                                                    font: { size: 12 },
+                                                    generateLabels: (ch) => {
+                                                        const ds = ch.data.datasets[0];
+
+                                                        return ch.data.labels.map((label, i) => ({
+                                                            text: label,
+                                                            fillStyle: ds.backgroundColor[i],
+                                                            strokeStyle: ds.backgroundColor[i],
+                                                            fontColor: c.text,
+                                                            lineWidth: 0,
+                                                            index: i,
+                                                        }));
+                                                    },
+                                                },
+                                            },
+                                            tooltip: {
+                                                callbacks: {
+                                                    label: (ctx) => {
+                                                        const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                                        const pct = total ? ((ctx.parsed.x / total) * 100).toFixed(1) : 0;
+                                                        return ' ' + fmt(ctx.parsed.x) + ' (' + pct + '%)';
+                                                    },
                                                 },
                                             },
                                         },
+                                        scales: {
+                                            x: {
+                                                beginAtZero: true,
+                                                border: { display: false },
+                                                grid: { color: c.grid },
+                                                ticks: { color: c.text, precision: 0, padding: 8, font: { size: 12 }, callback: (v) => fmt(v) },
+                                            },
+                                            y: {
+                                                border: { display: false },
+                                                grid: { display: false },
+                                                ticks: { color: c.text, font: { size: 12 } },
+                                            },
+                                        },
                                     },
-                                },
-                            });
+                                });
 
-                            // Données reçues avant la création du graphique
-                            if (pending) {
-                                this.update(pending);
-                                pending = null;
-                            }
-                        },
+                                // Données reçues avant la création du graphique
+                                if (pending) {
+                                    this.update(pending);
+                                    pending = null;
+                                }
+                            },
 
-                        update(data) {
-                            if (! chart) {
-                                pending = data;
-                                return;
-                            }
+                            update(data) {
+                                if (! chart) {
+                                    pending = data;
+                                    return;
+                                }
 
-                            chart.data.labels = data.labels;
-                            chart.data.datasets[0].data = data.values;
-                            chart.update();
-                        },
+                                chart.data.labels = data.labels;
+                                chart.data.datasets[0].data = data.values;
+                                chart.data.datasets[0].backgroundColor = data.colors;
+                                chart.data.datasets[0].borderColor = data.colors;
+                                chart.update();
+                            },
 
-                        destroy() {
-                            chart?.destroy();
-                            chart = null;
-                        },
-                    };
-                })()"
-                x-on:donut-chart-updated.window="update($event.detail.chart)"
-            >
-                <canvas x-ref="canvas"></canvas>
+                            destroy() {
+                                chart?.destroy();
+                                chart = null;
+                            },
+                        };
+                    })()"
+                    x-on:requests-chart-updated.window="update($event.detail.chart)"
+                >
+                    <canvas x-ref="canvas"></canvas>
+                </div>
             </div>
         </div>
     </flux:card>

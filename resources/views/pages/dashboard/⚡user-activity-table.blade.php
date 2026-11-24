@@ -13,13 +13,14 @@ new class extends Component
     // Période maximale acceptée (jours) : protège l'API contre des requêtes énormes
     private const MAX_DAYS = 366;
 
+    // 'hint' alimente la légende ; 'color' colore l'en-tête et les valeurs
     public const METRICS = [
-        'total_action'       => ['label' => 'Total', 'color' => 'text-zinc-500 dark:text-zinc-400'],
-        'answer_mail'        => ['label' => 'Mail',  'color' => 'text-sky-500'],
-        'mark_as_read'       => ['label' => 'Marq.', 'color' => 'text-zinc-500 dark:text-zinc-400'],
-        'pending_ticket'     => ['label' => 'Atte.', 'color' => 'text-zinc-500 dark:text-zinc-400'],
-        'in_progress_ticket' => ['label' => 'Prog.', 'color' => 'text-zinc-500 dark:text-zinc-400'],
-        'closed_ticket'      => ['label' => 'Clot.', 'color' => 'text-zinc-500 dark:text-zinc-400'],
+        'total_action'       => ['label' => 'Total', 'hint' => null,                                'color' => 'text-zinc-600 dark:text-zinc-300'],
+        'answer_mail'        => ['label' => 'Mail',  'hint' => 'Envoyer un mail au client',         'color' => 'text-sky-600 dark:text-sky-400'],
+        'mark_as_read'       => ['label' => 'Marq.', 'hint' => 'Marquer comme lu un mail',          'color' => 'text-violet-600 dark:text-violet-400'],
+        'pending_ticket'     => ['label' => 'Atte.', 'hint' => 'Remettre en attente un ticket',     'color' => 'text-amber-600 dark:text-amber-400'],
+        'in_progress_ticket' => ['label' => 'Prog.', 'hint' => 'Mettre en cours un ticket',         'color' => 'text-blue-600 dark:text-blue-400'],
+        'closed_ticket'      => ['label' => 'Clot.', 'hint' => 'Clôturer un ticket',                'color' => 'text-emerald-600 dark:text-emerald-400'],
     ];
 
     public string $dateStart = '';
@@ -210,8 +211,9 @@ new class extends Component
 
 {{-- wire:init sur un <div> : Blade n'accepte pas @if dans les attributs d'un composant <flux:...> --}}
 <div @if (! $loaded) wire:init="load" @endif>
-    <flux:card class="flex flex-col gap-4 bg-zinc-100 dark:bg-zinc-700/60 border-zinc-200 dark:border-zinc-600">
-        <div class="flex flex-wrap items-end justify-between gap-4">
+    <flux:card class="flex flex-col gap-0 overflow-hidden p-0 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-600">
+        {{-- En-tête séparé du contenu par une bordure --}}
+        <div class="flex flex-wrap items-end justify-between gap-4 border-b border-zinc-200 px-6 py-4 dark:border-zinc-600">
             <div>
                 <flux:heading size="lg">{{ __('Résumé Activité Utilisateur') }}</flux:heading>
                 <flux:text class="text-sm">{{ __('Résumé de chaque action utilisateur') }}</flux:text>
@@ -238,107 +240,114 @@ new class extends Component
             </div>
         </div>
 
-        <div class="flex flex-wrap gap-x-6 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
-            <span><strong>Mail :</strong> {{ __('Envoyer un mail au client') }}</span>
-            <span><strong>Marq. :</strong> {{ __('Marquer comme lu un mail') }}</span>
-            <span><strong>Atte. :</strong> {{ __('Remettre en attente un ticket') }}</span>
-            <span><strong>Prog. :</strong> {{ __('Mettre en cours un ticket') }}</span>
-            <span><strong>Clot. :</strong> {{ __('Clôturer un ticket') }}</span>
-        </div>
-
-        @if (! $loaded)
-            {{-- Squelette pendant le chargement initial --}}
-            <div class="animate-pulse space-y-2">
-                <div class="h-12 rounded bg-zinc-200 dark:bg-zinc-600"></div>
-                @foreach (range(1, 8) as $i)
-                    <div wire:key="sk-ua-{{ $i }}" class="h-9 rounded bg-zinc-200/70 dark:bg-zinc-600/60"></div>
+        <div class="flex flex-col gap-4 p-6">
+            {{-- Légende : une pastille colorée par action --}}
+            <div class="flex flex-wrap gap-x-5 gap-y-2 text-xs text-zinc-500 dark:text-zinc-400">
+                @foreach ($this::METRICS as $meta)
+                    @if ($meta['hint'])
+                        <span class="inline-flex items-center gap-1.5">
+                            <span class="font-semibold {{ $meta['color'] }}">{{ $meta['label'] }}</span>
+                            <span>{{ __($meta['hint']) }}</span>
+                        </span>
+                    @endif
                 @endforeach
             </div>
-        @elseif ($error)
-            <flux:callout variant="danger" icon="exclamation-circle" :heading="$error">
-                <x-slot name="actions">
-                    <flux:button size="sm" wire:click="refresh">{{ __('Réessayer') }}</flux:button>
-                </x-slot>
-            </flux:callout>
-        @elseif (empty($rows))
-            <flux:text class="py-12 text-center">{{ __('Aucune donnée disponible pour cette période.') }}</flux:text>
-        @else
-            @php
-                $metrics = $this::METRICS;
-                $nb      = count($metrics);
-                $border  = 'border-zinc-300 dark:border-zinc-600';
-                $solid   = 'bg-zinc-100 dark:bg-zinc-800';
-            @endphp
 
-            {{-- La clé force un nouvel élément à chaque changement de période : le scroll repart en bas --}}
-            <div
-                wire:key="ua-{{ $dateStart }}-{{ $dateEnd }}"
-                wire:loading.class="opacity-50"
-                wire:target="dateStart,dateEnd,refresh"
-                x-data
-                x-init="$nextTick(() => $el.scrollTop = $el.scrollHeight)"
-                class="max-h-[625px] overflow-auto transition-opacity"
-            >
-                <table class="w-full border-collapse text-xs">
-                    <thead class="sticky top-0 z-30 {{ $solid }}">
-                    <tr>
-                        <th rowspan="2" class="sticky left-0 z-40 {{ $solid }} min-w-[52px] whitespace-nowrap border-b border-r-2 {{ $border }} px-4 py-2.5 text-left text-[10px] uppercase tracking-widest">
-                            Date
-                        </th>
-                        @foreach ($agents as $agent)
-                            <th colspan="{{ $nb }}" class="{{ $solid }} whitespace-nowrap border-b border-l-2 {{ $border }} px-2 pb-1.5 pt-2.5 text-center text-[13px] font-bold">
-                                {{ $agent }}
+            @if (! $loaded)
+                {{-- Squelette pendant le chargement initial --}}
+                <div class="animate-pulse space-y-2">
+                    <div class="h-12 rounded bg-zinc-200 dark:bg-zinc-600"></div>
+                    @foreach (range(1, 8) as $i)
+                        <div wire:key="sk-ua-{{ $i }}" class="h-9 rounded bg-zinc-200/70 dark:bg-zinc-600/60"></div>
+                    @endforeach
+                </div>
+            @elseif ($error)
+                <flux:callout variant="danger" icon="exclamation-circle" :heading="$error">
+                    <x-slot name="actions">
+                        <flux:button size="sm" wire:click="refresh">{{ __('Réessayer') }}</flux:button>
+                    </x-slot>
+                </flux:callout>
+            @elseif (empty($rows))
+                <flux:text class="py-12 text-center">{{ __('Aucune donnée disponible pour cette période.') }}</flux:text>
+            @else
+                @php
+                    $metrics = $this::METRICS;
+                    $nb      = count($metrics);
+                    $border  = 'border-zinc-200 dark:border-zinc-700';
+                    $head    = 'bg-zinc-50 dark:bg-zinc-900';
+                    $body    = 'bg-white dark:bg-zinc-800';
+                @endphp
+
+                {{-- La clé force un nouvel élément à chaque changement de période : le scroll repart en bas --}}
+                <div
+                    wire:key="ua-{{ $dateStart }}-{{ $dateEnd }}"
+                    wire:loading.class="opacity-50"
+                    wire:target="dateStart,dateEnd,refresh"
+                    x-data
+                    x-init="$nextTick(() => $el.scrollTop = $el.scrollHeight)"
+                    class="max-h-[625px] overflow-auto rounded-lg border {{ $border }} transition-opacity"
+                >
+                    <table class="w-full border-separate border-spacing-0 text-xs">
+                        <thead class="sticky top-0 z-30">
+                        <tr>
+                            <th rowspan="2" class="sticky left-0 z-40 {{ $head }} min-w-[64px] whitespace-nowrap border-b border-r {{ $border }} px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+                                Date
                             </th>
-                        @endforeach
-                    </tr>
-                    <tr>
-                        @foreach ($agents as $agent)
-                            @foreach ($metrics as $meta)
-                                <th class="{{ $solid }} border-b-2 {{ $loop->first ? 'border-l-2' : 'border-l' }} {{ $border }} px-1.5 pb-2 pt-1 text-center text-[10px] font-semibold uppercase tracking-wider {{ $meta['color'] }}">
-                                    {{ $meta['label'] }}
+                            @foreach ($agents as $agent)
+                                <th colspan="{{ $nb }}" class="{{ $head }} whitespace-nowrap border-b border-l {{ $border }} px-2 py-2.5 text-center text-[13px] font-semibold text-zinc-900 dark:text-white">
+                                    {{ $agent }}
                                 </th>
                             @endforeach
+                        </tr>
+                        <tr>
+                            @foreach ($agents as $agent)
+                                @foreach ($metrics as $meta)
+                                    <th class="{{ $head }} border-b {{ $loop->first ? 'border-l' : '' }} {{ $border }} px-2 pb-2 pt-1 text-center text-[10px] font-semibold uppercase tracking-wider {{ $meta['color'] }}">
+                                        {{ $meta['label'] }}
+                                    </th>
+                                @endforeach
+                            @endforeach
+                        </tr>
+                        </thead>
+
+                        <tbody>
+                        @foreach ($rows as $i => $row)
+                            <tr wire:key="ua-row-{{ $i }}" class="group {{ $row['active'] ? '' : 'opacity-50' }}">
+                                <td class="sticky left-0 z-10 {{ $body }} whitespace-nowrap border-b border-r {{ $border }} px-4 py-2 text-center group-hover:bg-zinc-100 dark:group-hover:bg-zinc-700">
+                                    <span class="block text-base font-semibold leading-none text-zinc-900 dark:text-white">{{ $row['day'] }}</span>
+                                    <span class="mt-0.5 block text-[9px] uppercase tracking-widest text-zinc-500 dark:text-zinc-400">{{ $row['month'] }}</span>
+                                </td>
+
+                                @foreach ($agents as $a => $agent)
+                                    @foreach ($metrics as $key => $meta)
+                                        @php $val = $row['cells'][$a * $nb + $loop->index] ?? 0; @endphp
+                                        <td class="border-b {{ $loop->first ? 'border-l' : '' }} {{ $border }} px-2 py-2 text-center tabular-nums group-hover:bg-zinc-100 dark:group-hover:bg-zinc-700/60 {{ $val > 0 ? 'font-semibold '.$meta['color'] : 'text-zinc-300 dark:text-zinc-600' }}">
+                                            {{ $val > 0 ? $val : '·' }}
+                                        </td>
+                                    @endforeach
+                                @endforeach
+                            </tr>
                         @endforeach
-                    </tr>
-                    </thead>
+                        </tbody>
 
-                    <tbody>
-                    @foreach ($rows as $i => $row)
-                        <tr wire:key="ua-row-{{ $i }}" class="border-b {{ $border }} transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700 {{ $row['active'] ? '' : 'opacity-60' }}">
-                            <td class="sticky left-0 z-10 {{ $solid }} whitespace-nowrap border-r-2 {{ $border }} px-4 py-2 text-center">
-                                <span class="block text-base font-bold leading-none">{{ $row['day'] }}</span>
-                                <span class="mt-0.5 block text-[9px] uppercase tracking-widest">{{ $row['month'] }}</span>
+                        <tfoot class="sticky bottom-0 z-30">
+                        <tr>
+                            <td class="sticky left-0 z-40 {{ $head }} border-r border-t {{ $border }} px-4 py-2.5 text-center text-[10px] font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+                                Total
                             </td>
-
                             @foreach ($agents as $a => $agent)
                                 @foreach ($metrics as $key => $meta)
-                                    @php $val = $row['cells'][$a * $nb + $loop->index] ?? 0; @endphp
-                                    <td class="px-1.5 py-2 text-center tabular-nums {{ $loop->first ? 'border-l-2' : 'border-l' }} {{ $border }} {{ $val > 0 ? 'font-bold '.$meta['color'] : 'text-zinc-400 dark:text-zinc-600' }}">
-                                        {{ $val > 0 ? $val : '—' }}
+                                    @php $sum = $totals[$a * $nb + $loop->index] ?? 0; @endphp
+                                    <td class="{{ $head }} border-t {{ $loop->first ? 'border-l' : '' }} {{ $border }} px-2 py-2.5 text-center tabular-nums {{ $sum > 0 ? 'text-sm font-bold '.$meta['color'] : 'text-zinc-300 dark:text-zinc-600' }}">
+                                        {{ $sum > 0 ? $sum : '·' }}
                                     </td>
                                 @endforeach
                             @endforeach
                         </tr>
-                    @endforeach
-                    </tbody>
-
-                    <tfoot class="sticky bottom-0 z-30 {{ $solid }}">
-                    <tr>
-                        <td class="sticky left-0 z-40 {{ $solid }} border-r-2 border-t-2 {{ $border }} px-4 py-2.5 text-center text-[10px] font-extrabold uppercase tracking-widest">
-                            Total
-                        </td>
-                        @foreach ($agents as $a => $agent)
-                            @foreach ($metrics as $key => $meta)
-                                @php $sum = $totals[$a * $nb + $loop->index] ?? 0; @endphp
-                                <td class="{{ $solid }} border-t-2 px-1.5 py-2.5 text-center tabular-nums {{ $loop->first ? 'border-l-2' : 'border-l' }} {{ $border }} {{ $sum > 0 ? 'text-sm font-bold '.$meta['color'] : 'text-zinc-400 dark:text-zinc-600' }}">
-                                    {{ $sum > 0 ? $sum : '—' }}
-                                </td>
-                            @endforeach
-                        @endforeach
-                    </tr>
-                    </tfoot>
-                </table>
-            </div>
-        @endif
+                        </tfoot>
+                    </table>
+                </div>
+            @endif
+        </div>
     </flux:card>
 </div>

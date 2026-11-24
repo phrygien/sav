@@ -77,24 +77,27 @@ new class extends Component
 
 <div class="flex flex-col gap-4" @if (! $loaded) wire:init="loadProjects" @endif>
     @php
-        // Mêmes couleurs que la répartition des tickets : attente = orange, en cours = bleu, clôturé = vert
+        // Pastilles : attente = orange, en cours = bleu, clôturé = vert (grisées quand la valeur est 0)
         $stats = [
             'pending_ticket' => [
-                'label'  => __('En attente'),
-                'accent' => 'text-orange-600 dark:text-orange-400',
-                'dot'    => 'bg-orange-400',
+                'label' => __('En attente'),
+                'icon'  => 'clock',
+                'tag'   => 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300',
             ],
             'in_progress_ticket' => [
-                'label'  => __('En cours'),
-                'accent' => 'text-sky-600 dark:text-sky-400',
-                'dot'    => 'bg-sky-400',
+                'label' => __('En cours'),
+                'icon'  => 'arrow-path',
+                'tag'   => 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300',
             ],
             'closed_ticket' => [
-                'label'  => __('Clôturés'),
-                'accent' => 'text-emerald-600 dark:text-emerald-400',
-                'dot'    => 'bg-emerald-400',
+                'label' => __('Clôturés'),
+                'icon'  => 'check-circle',
+                'tag'   => 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300',
             ],
         ];
+
+        $tagBase  = 'inline-flex items-center gap-1.5 rounded-sm border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide';
+        $tagEmpty = 'border-zinc-200 bg-zinc-50 text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-500';
     @endphp
 
     {{-- En-tête de section : titre + description, actualiser à droite --}}
@@ -123,21 +126,12 @@ new class extends Component
         {{-- Squelettes pendant le chargement initial --}}
         <div class="grid animate-pulse gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
             @foreach (range(1, 5) as $i)
-                <div wire:key="sk-project-{{ $i }}" class="rounded-xl border border-zinc-300/70 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
-                    <div class="flex items-start justify-between gap-2">
-                        <div class="space-y-2">
-                            <div class="h-4 w-28 rounded bg-zinc-200 dark:bg-zinc-700"></div>
-                            <div class="h-3 w-14 rounded bg-zinc-200 dark:bg-zinc-700"></div>
-                        </div>
-                        <div class="h-5 w-12 rounded-full bg-zinc-200 dark:bg-zinc-700"></div>
-                    </div>
-
-                    <div class="mt-4 grid grid-cols-3 gap-3">
+                <div wire:key="sk-project-{{ $i }}" class="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
+                    <div class="h-3 w-24 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                    <div class="mt-3 h-8 w-16 rounded bg-zinc-200 dark:bg-zinc-700"></div>
+                    <div class="mt-4 flex gap-2">
                         @foreach (range(1, 3) as $j)
-                            <div wire:key="sk-project-{{ $i }}-stat-{{ $j }}" class="space-y-2">
-                                <div class="h-5 w-8 rounded bg-zinc-200 dark:bg-zinc-700"></div>
-                                <div class="h-3 w-14 rounded bg-zinc-100 dark:bg-zinc-700/50"></div>
-                            </div>
+                            <div wire:key="sk-project-{{ $i }}-stat-{{ $j }}" class="h-5 w-16 rounded-sm bg-zinc-100 dark:bg-zinc-700/50"></div>
                         @endforeach
                     </div>
                 </div>
@@ -158,38 +152,54 @@ new class extends Component
             class="grid gap-4 transition-opacity md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5"
         >
             @foreach ($projects as $project)
+                @php
+                    $total  = 0;
+                    foreach ($stats as $field => $s) {
+                        $total += (int) ($project[$field] ?? 0);
+                    }
+                    $active = ($project['state'] ?? 0) === 1;
+                @endphp
+
                 <a
                     wire:key="project-{{ $project['id'] }}"
                     href="{{ route('kanban', ['project' => $project['id']]) }}"
                     wire:navigate
-                    class="block rounded-xl border border-zinc-300/70 bg-white p-4 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700/40"
+                    class="block rounded-lg border border-zinc-200 bg-white p-5 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700/40"
                 >
+                    {{-- Libellé : nom du projet en petites capitales + état --}}
                     <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0 space-y-0.5">
-                            <div class="truncate text-sm font-medium text-zinc-900 dark:text-white">{{ $project['name'] ?? '' }}</div>
-                            <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ $project['code'] ?? '' }}</div>
+                        <div class="min-w-0">
+                            <div class="truncate text-[11px] font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
+                                {{ $project['name'] ?? '' }}
+                            </div>
+
+                            @if (! empty($project['code']))
+                                <div class="mt-0.5 text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500">{{ $project['code'] }}</div>
+                            @endif
                         </div>
 
-                        <flux:badge size="sm" :color="($project['state'] ?? 0) === 1 ? 'green' : 'zinc'">
-                            {{ ($project['state'] ?? 0) === 1 ? __('Actif') : __('Inactif') }}
-                        </flux:badge>
+                        <span @class([
+                            'size-2 shrink-0 rounded-full mt-1',
+                            'bg-emerald-500' => $active,
+                            'bg-zinc-300 dark:bg-zinc-600' => ! $active,
+                        ]) title="{{ $active ? __('Actif') : __('Inactif') }}"></span>
                     </div>
 
-                    <div class="mt-4 grid grid-cols-3 gap-3">
+                    {{-- Valeur principale : total des tickets du projet --}}
+                    <div class="mt-2 text-3xl font-bold tabular-nums text-zinc-900 dark:text-white">
+                        {{ number_format($total, 0, ',', ' ') }}
+                    </div>
+
+                    {{-- Pastilles par statut --}}
+                    <div class="mt-3 flex flex-wrap gap-2">
                         @foreach ($stats as $field => $s)
                             @php $value = (int) ($project[$field] ?? 0); @endphp
 
-                            <div>
-                                {{-- Chiffre coloré selon le statut ; grisé quand il vaut 0 --}}
-                                <div class="text-lg font-semibold tabular-nums {{ $value > 0 ? $s['accent'] : 'text-zinc-300 dark:text-zinc-600' }}">
-                                    {{ number_format($value, 0, ',', ' ') }}
-                                </div>
-
-                                <div class="mt-0.5 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                                    <span class="size-1.5 shrink-0 rounded-full {{ $value > 0 ? $s['dot'] : 'bg-zinc-200 dark:bg-zinc-700' }}"></span>
-                                    <span class="truncate">{{ $s['label'] }}</span>
-                                </div>
-                            </div>
+                            <span class="{{ $tagBase }} {{ $value > 0 ? $s['tag'] : $tagEmpty }}">
+                                <span class="tabular-nums">{{ number_format($value, 0, ',', ' ') }}</span>
+                                <span>{{ $s['label'] }}</span>
+                                <flux:icon :name="$s['icon']" variant="micro" class="size-3.5" />
+                            </span>
                         @endforeach
                     </div>
                 </a>
